@@ -1,0 +1,11 @@
+node_modules/
+android/.gradle/
+android/app/build/
+ios/Pods/
+ios/build/
+coverage/
+backend/target/
+backend/tools/
+.env
+.env.*
+*.keystore

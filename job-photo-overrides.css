@@ -1,0 +1,6 @@
+/* Local photographic thumbnails for Assigned Jobs. */
+.job-thumb { background: #dce6f2; }
+.job-thumb::before { display: none; }
+.job-thumb::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 62%, rgba(4, 25, 60, .2)); border-radius: inherit; }
+.job-thumb img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.job-thumb i, .job-thumb b { display: none; }

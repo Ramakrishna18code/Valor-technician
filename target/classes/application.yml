@@ -1,0 +1,18 @@
+spring:
+  application.name: valor-platform
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/valor_lifts?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate.ddl-auto: validate
+    open-in-view: false
+  servlet.multipart.max-file-size: 10MB
+  servlet.multipart.max-request-size: 25MB
+  flyway.enabled: true
+server.error.include-message: never
+valor:
+  jwt.secret: ${JWT_SECRET}
+  jwt.expiration-minutes: 60
+  storage.local-path: ${FILE_STORAGE_PATH:./storage}
+springdoc.swagger-ui.path: /swagger-ui.html

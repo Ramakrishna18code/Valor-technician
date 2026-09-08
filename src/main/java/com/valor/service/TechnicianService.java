@@ -1,0 +1,3 @@
+package com.valor.service;
+import com.valor.dto.technician.TechnicianDtos.*;import com.valor.entity.ServiceRequest;import com.valor.enums.ServiceRequestStatus;import java.util.*;
+public interface TechnicianService { Dashboard dashboard(UUID technicianId); List<JobSummary> jobs(UUID technicianId); JobDetail job(UUID technicianId,UUID requestId); JobSummary accept(UUID technicianId,UUID requestId); JobSummary updateStatus(UUID technicianId,UUID requestId,UpdateStatusRequest request); ServiceRequest requestForTechnician(UUID technicianId,UUID requestId); void saveDiagnosis(UUID technicianId,UUID requestId,DiagnosisRequest request); void submitReport(UUID technicianId,UUID requestId,ReportRequest request); }

@@ -1,0 +1,8 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:valor;MODE=MySQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa.hibernate.ddl-auto: create-drop
+  flyway.enabled: false
+valor.jwt.secret: dGVzdC1vbmx5LXNlY3JldC10aGF0LWlzLWxvbmcgZW5vdWdoLTIx

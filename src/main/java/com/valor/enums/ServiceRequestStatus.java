@@ -1,0 +1,2 @@
+package com.valor.enums;
+public enum ServiceRequestStatus { OPEN, ASSIGNED, ACCEPTED, ON_THE_WAY, ON_SITE, IN_PROGRESS, WAITING_FOR_PARTS, TESTING, COMPLETED, CANCELLED }

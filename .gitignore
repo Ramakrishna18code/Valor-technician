@@ -1,11 +1,15 @@
 node_modules/
+android/
 android/.gradle/
 android/app/build/
 ios/Pods/
 ios/build/
 coverage/
+dist/
+.expo/
 backend/target/
 backend/tools/
 .env
 .env.*
+!.env.example
 *.keystore

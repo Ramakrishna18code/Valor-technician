@@ -1,4 +1,4 @@
 {
-  "extends": "@react-native/typescript-config/tsconfig.json",
-  "include": ["src/**/*.ts", "src/**/*.tsx", "jest.setup.ts"]
+  "extends": "expo/tsconfig.base",
+  "include": ["src/**/*.ts", "src/**/*.tsx", "__tests__/**/*.ts"]
 }

@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Valor Technician",
+    "slug": "valor-technician",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "valortechnician",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Valor uses your location only while an active assigned job is open so customers can see your latest job location."
+      }
+    },
+    "android": {
+      "package": "com.valor.technician",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Valor uses your location only while an active assigned job is open so customers can see your latest job location."
+        }
+      ]
+    ],
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

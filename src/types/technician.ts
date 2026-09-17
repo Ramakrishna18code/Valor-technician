@@ -152,24 +152,27 @@ export interface LocationView {
   longitude: number;
   timestamp: string;
   stale: boolean;
-  trackingState: RequestStatus;
+  trackingState: string;
 }
 
 export interface VisitView {
   id: number;
   serviceRequestId: number;
-  serviceRequestReference?: string | null;
+  serviceId?: string | null;
+  title?: string | null;
+  customerProfileId?: number | null;
+  liftId?: number | null;
   technicianProfileId?: number | null;
+  technicianEmployeeId?: string | null;
+  technicianSpecialization?: string | null;
   scheduledDate: string;
   startTime: string;
   endTime: string;
   status: VisitStatus;
   notes?: string | null;
-  customerName?: string | null;
-  buildingName?: string | null;
-  liftName?: string | null;
   serviceType?: ServiceType | string | null;
   priority?: RequestPriority | string | null;
+  history?: unknown[];
   createdAt?: string | null;
   updatedAt?: string | null;
   [key: string]: unknown;

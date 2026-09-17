@@ -68,6 +68,13 @@ const LOCATION_INTERVAL_MS = 5 * 60 * 1000;
 const label = (value?: string | null) => value ? value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : 'Unavailable';
 const requestTitle = (request: RequestView) => request.serviceId || `SR-${request.id}`;
 const requestSummary = (request: RequestView) => request.title || request.description || label(request.serviceType);
+const visitTitle = (visit: VisitView) => visit.serviceId || `Request ${visit.serviceRequestId}`;
+const visitContext = (visit: VisitView) => [
+  visit.title,
+  visit.liftId ? `Lift ID ${visit.liftId}` : null,
+  visit.customerProfileId ? `Customer profile ${visit.customerProfileId}` : null,
+  visit.technicianEmployeeId ? `Technician ${visit.technicianEmployeeId}` : null,
+].filter(Boolean).join(' - ') || 'Visit context unavailable';
 const err = (error: unknown) => error instanceof Error ? error.message : 'Valor request failed.';
 
 export default function App() {
@@ -329,6 +336,9 @@ export default function App() {
           if (selectedJob) await refreshJob();
           await loadCore();
         }}
+        onError={error => {
+          setMessage(err(error));
+        }}
       />
     </View>
   </SafeAreaView>;
@@ -447,11 +457,11 @@ function Visits({visits, loading, onVisit, onRefresh}: {visits: VisitView[]; loa
 
 function VisitDetailScreen({visit, onStatus, onCancel, onReschedule, onAdditional}: {visit: VisitView; onStatus: (status: 'IN_PROGRESS' | 'COMPLETED') => void; onCancel: () => void; onReschedule: () => void; onAdditional: () => void}) {
   return <ScrollView contentContainerStyle={styles.content}>
-    <Text style={styles.kicker}>{visit.serviceRequestReference || `Request ${visit.serviceRequestId}`}</Text>
+    <Text style={styles.kicker}>{visitTitle(visit)}</Text>
     <Text style={styles.title}>Visit detail</Text>
     <Badge text={label(visit.status)} tone="info" />
     <Info title="Schedule" rows={[visit.scheduledDate, `${visit.startTime} - ${visit.endTime}`, visit.notes]} />
-    <Info title="Context" rows={[visit.customerName, visit.buildingName, visit.liftName, visit.serviceType && label(String(visit.serviceType))]} />
+    <Info title="Context" rows={[visit.title, visit.liftId ? `Lift ID ${visit.liftId}` : null, visit.customerProfileId ? `Customer profile ${visit.customerProfileId}` : null, visit.technicianProfileId ? `Technician profile ${visit.technicianProfileId}` : null]} />
     {visit.status === 'SCHEDULED' ? <Pressable style={styles.primaryButton} onPress={() => onStatus('IN_PROGRESS')}><Text style={styles.primaryText}>Start visit</Text></Pressable> : null}
     {visit.status === 'IN_PROGRESS' ? <Pressable style={styles.primaryButton} onPress={() => onStatus('COMPLETED')}><Text style={styles.primaryText}>Complete visit</Text></Pressable> : null}
     {visit.status !== 'CANCELLED' && visit.status !== 'COMPLETED' ? <>
@@ -480,7 +490,7 @@ function Profile({profile, dashboard, onAvailability, onLogout}: {profile: Techn
   </ScrollView>;
 }
 
-function ActionModal({mode, onClose, onSubmit}: {mode: ModalMode | null; onClose: () => void; onSubmit: (values: Record<string, string>) => Promise<void>}) {
+function ActionModal({mode, onClose, onSubmit, onError}: {mode: ModalMode | null; onClose: () => void; onSubmit: (values: Record<string, string>) => Promise<void>; onError: (error: unknown) => void}) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
@@ -550,7 +560,7 @@ function ActionModal({mode, onClose, onSubmit}: {mode: ModalMode | null; onClose
         {values.name ? <View style={styles.selectedFile}><Text style={styles.cardTitle}>{values.name}</Text><Text style={styles.muted}>{values.type}</Text></View> : <Empty text="No file selected." />}
         {pickerError ? <Text style={styles.errorText}>{pickerError}</Text> : null}
       </> : fields.map(field => <Input key={field} label={label(field)} value={values[field] ?? ''} onChangeText={text => setValues(current => ({...current, [field]: text}))} multiline={field.includes('notes') || field.includes('reason') || field.includes('diagnosis') || field.includes('work')} />)}
-      <View style={styles.actions}><Pressable style={styles.outlineButton} onPress={onClose}><Text style={styles.outlineText}>Cancel</Text></Pressable><Pressable style={styles.primaryButton} disabled={saving} onPress={async () => { setSaving(true); try { await onSubmit(values); } finally { setSaving(false); } }}><Text style={styles.primaryText}>{saving ? 'Saving...' : 'Submit'}</Text></Pressable></View>
+      <View style={styles.actions}><Pressable style={styles.outlineButton} disabled={saving} onPress={onClose}><Text style={styles.outlineText}>Cancel</Text></Pressable><Pressable style={[styles.primaryButton, saving && styles.disabled]} disabled={saving} onPress={async () => { setSaving(true); try { await onSubmit(values); } catch (error) { onError(error); } finally { setSaving(false); } }}><Text style={styles.primaryText}>{saving ? 'Saving...' : 'Submit'}</Text></Pressable></View>
     </View></View>
   </Modal>;
 }
@@ -627,9 +637,9 @@ function JobCard({job, onPress}: {job: RequestView; onPress: () => void}) {
 
 function VisitCard({visit, onPress}: {visit: VisitView; onPress?: () => void}) {
   return <Pressable style={styles.card} disabled={!onPress} onPress={onPress}>
-    <View style={styles.rowBetween}><Text style={styles.cardTitle}>{visit.serviceRequestReference || `Request ${visit.serviceRequestId}`}</Text><Badge text={label(visit.status)} tone="info" /></View>
+    <View style={styles.rowBetween}><Text style={styles.cardTitle}>{visitTitle(visit)}</Text><Badge text={label(visit.status)} tone="info" /></View>
     <Text style={styles.muted}>{visit.scheduledDate} - {visit.startTime} to {visit.endTime}</Text>
-    <Text style={styles.muted}>{visit.buildingName || visit.liftName || 'Visit context unavailable'}</Text>
+    <Text style={styles.muted}>{visitContext(visit)}</Text>
   </Pressable>;
 }
 

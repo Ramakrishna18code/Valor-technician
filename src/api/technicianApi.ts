@@ -3,7 +3,9 @@ import {tokenStorage} from '../storage/tokens';
 import {requestData, unwrapEnvelope} from './client';
 import type {
   AttachmentView,
+  CompletionOtpState,
   Authentication,
+  JobChecklistView,
   CurrentUser,
   JobDetail,
   LocationView,
@@ -15,6 +17,7 @@ import type {
   TechnicianDashboard,
   TechnicianProfileView,
   UploadFile,
+  PrivateAttachmentView,
   VisitChangeRequestView,
   VisitStatus,
   VisitView,
@@ -99,6 +102,14 @@ export const technicianApi = {
       method: 'PUT',
       url: '/api/v1/technician/me/profile',
       data: {availabilityStatus},
+    });
+  },
+
+  updateProfile(input: Partial<TechnicianProfileView>) {
+    return requestData<TechnicianProfileView>({
+      method: 'PUT',
+      url: '/api/v1/technician/me/profile',
+      data: input,
     });
   },
 
@@ -206,6 +217,40 @@ export const technicianApi = {
       method: 'DELETE',
       url: `/api/v1/service-requests/${requestId}/attachments/${attachmentId}`,
     });
+  },
+
+  checklist(requestId: number) {
+    return requestData<JobChecklistView | null>({method: 'GET', url: `/api/v1/technician/me/jobs/${requestId}/checklist`});
+  },
+
+  saveChecklist(requestId: number, responses: {itemId: number; checked?: boolean; valueText?: string}[]) {
+    return requestData<JobChecklistView>({method: 'PUT', url: `/api/v1/technician/me/jobs/${requestId}/checklist/responses`, data: {responses}});
+  },
+
+  requestCompletionOtp(requestId: number) {
+    return requestData<CompletionOtpState>({method: 'POST', url: `/api/v1/technician/me/jobs/${requestId}/completion-otp/request`, data: {}});
+  },
+
+  verifyCompletionOtp(requestId: number, otpId: number, otp: string) {
+    return requestData<CompletionOtpState>({method: 'POST', url: `/api/v1/technician/me/jobs/${requestId}/completion-otp/verify`, data: {otpId, otp}});
+  },
+
+  privateAttachments() {
+    return requestData<PrivateAttachmentView[]>({method: 'GET', url: '/api/v1/technician/me/private-attachments'});
+  },
+
+  privateAttachmentUrl(id: number) {
+    return `${environment.apiBaseUrl}/api/v1/technician/me/private-attachments/${id}`;
+  },
+
+  uploadPrivateAttachment(file: UploadFile) {
+    const data = new FormData();
+    data.append('file', file as unknown as Blob);
+    return requestData<PrivateAttachmentView>({method: 'POST', url: '/api/v1/technician/me/private-attachments', data, headers: {'Content-Type': 'multipart/form-data'}});
+  },
+
+  deletePrivateAttachment(id: number) {
+    return requestData<null>({method: 'DELETE', url: `/api/v1/technician/me/private-attachments/${id}`});
   },
 
   notifications(page = 0, status?: string) {

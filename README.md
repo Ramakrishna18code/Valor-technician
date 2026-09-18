@@ -122,3 +122,42 @@ target device or emulator.
 Device/emulator validation was not performed in this phase. Real GPS behavior,
 camera/gallery permission flows, and physical file picker behavior must still be
 accepted manually in Expo Go by the tester.
+
+## Phase 15 advanced operations
+
+The Technician app now consumes backend-driven job checklists, completion OTP
+state, expanded profile fields, and technician-private attachments.
+
+- Job detail renders the assigned checklist from
+  `/api/v1/technician/me/jobs/{id}/checklist`, saves partial progress, resumes
+  saved responses, marks required items, and keeps completion disabled until the
+  backend reports the checklist complete.
+- Completion OTP is requested and verified through the backend. The app only
+  displays safe delivery/verification state; it never receives or stores the OTP
+  value.
+- Profile editing is limited to permitted operational/profile fields:
+  availability, profile photo URL, date of birth, gender, address, and emergency
+  contact details. Email, phone, employee ID, assignment area, specialization,
+  and active state remain read-only in the Technician app.
+- Technician-private attachments are shown in a separate private area using the
+  `/api/v1/technician/me/private-attachments` routes. They are distinct from
+  customer-visible request attachments.
+
+## Phase 16 advanced live tracking
+
+The Technician app keeps automatic active-job tracking and adds Expo background
+location support for development/production builds. Tracking starts only for a
+trackable assigned job, avoids starting duplicate background tasks, submits the
+same backend `/api/v1/technician/me/jobs/{id}/location` payload, and stops when
+the job is no longer trackable.
+
+The job detail screen shows foreground permission state, last submitted
+location, background task state, and backend/geofence errors where applicable.
+Expo Go cannot prove background location behavior; real device validation in a
+development or production build is still required.
+
+## Phase 17 communication foundation
+
+The Technician app includes shared communication channel/status/preference types
+for the backend communication foundation. No Technician workflow or UI was
+changed for Phase 17, and no Email/SMS/WhatsApp provider activation was added.

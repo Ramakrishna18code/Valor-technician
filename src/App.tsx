@@ -20,10 +20,13 @@ import {environment} from './config/environment';
 import {setSessionExpiredHandler} from './api/client';
 import {technicianApi} from './api/technicianApi';
 import {tokenStorage} from './storage/tokens';
+import {ensureBackgroundTracking, stopBackgroundTracking} from './tracking/backgroundLocation';
 import type {
   AttachmentView,
   AvailabilityStatus,
   JobDetail,
+  JobChecklistView,
+  CompletionOtpState,
   NotificationView,
   PageView,
   ReportView,
@@ -31,17 +34,19 @@ import type {
   RequestView,
   TechnicianDashboard,
   TechnicianProfileView,
+  PrivateAttachmentView,
   VisitView,
   UploadFile,
 } from './types/technician';
 
 type Screen = 'dashboard' | 'jobs' | 'visits' | 'notifications' | 'history' | 'profile' | 'jobDetail' | 'visitDetail';
-type ModalMode = 'report' | 'transition' | 'visitCancel' | 'reschedule' | 'additionalVisit' | 'attachment';
+type ModalMode = 'report' | 'transition' | 'visitCancel' | 'reschedule' | 'additionalVisit' | 'attachment' | 'privateAttachment';
 type SessionState = 'booting' | 'anonymous' | 'authenticated';
 type TrackingState = {
   active: boolean;
   permission: 'unknown' | 'granted' | 'denied';
   lastSubmittedAt?: string;
+  background?: string;
   error?: string;
 };
 
@@ -89,6 +94,9 @@ export default function App() {
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
   const [selectedVisit, setSelectedVisit] = useState<VisitView | null>(null);
   const [attachments, setAttachments] = useState<AttachmentView[]>([]);
+  const [checklist, setChecklist] = useState<JobChecklistView | null>(null);
+  const [completionOtp, setCompletionOtp] = useState<CompletionOtpState | null>(null);
+  const [privateAttachments, setPrivateAttachments] = useState<PrivateAttachmentView[]>([]);
   const [jobFilter, setJobFilter] = useState(0);
   const [historyFilter, setHistoryFilter] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -115,18 +123,20 @@ export default function App() {
     setLoading(true);
     setMessage(null);
     try {
-      const [nextDashboard, nextProfile, nextJobs, nextVisits, nextNotifications] = await Promise.all([
+      const [nextDashboard, nextProfile, nextJobs, nextVisits, nextNotifications, nextPrivateAttachments] = await Promise.all([
         technicianApi.dashboard(),
         technicianApi.profile(),
         technicianApi.jobs({page: 0, size: 20}),
         technicianApi.visits({page: 0, size: 20}),
         technicianApi.notifications(),
+        technicianApi.privateAttachments(),
       ]);
       setDashboard(nextDashboard);
       setProfile(nextProfile);
       setJobs(nextJobs);
       setVisits(nextVisits);
       setNotifications(nextNotifications);
+      setPrivateAttachments(nextPrivateAttachments);
     } catch (error) {
       setMessage(err(error));
     } finally {
@@ -186,6 +196,7 @@ export default function App() {
     const start = async () => {
       if (!trackable) {
         setTracking(current => ({...current, active: false, error: undefined}));
+        await stopBackgroundTracking().catch(() => undefined);
         return;
       }
       setTracking(current => ({...current, active: true, error: undefined}));
@@ -195,6 +206,8 @@ export default function App() {
         return;
       }
       if (!cancelled) setTracking(current => ({...current, permission: 'granted'}));
+      const background = await ensureBackgroundTracking(request.id).catch(error => ({started: false, state: err(error)}));
+      if (!cancelled) setTracking(current => ({...current, background: background.state}));
       await submit();
       interval = setInterval(submit, LOCATION_INTERVAL_MS);
     };
@@ -202,6 +215,7 @@ export default function App() {
     return () => {
       cancelled = true;
       if (interval) clearInterval(interval);
+      if (!trackable) stopBackgroundTracking().catch(() => undefined);
     };
   }, [screen, selectedJob?.request.id, selectedJob?.request.status]);
 
@@ -211,7 +225,9 @@ export default function App() {
     try {
       const detail = await technicianApi.job(request.id);
       setSelectedJob(detail);
-      setAttachments(await technicianApi.attachments(request.id));
+      const [files, nextChecklist] = await Promise.all([technicianApi.attachments(request.id), technicianApi.checklist(request.id)]);
+      setAttachments(files);
+      setChecklist(nextChecklist);
     } catch (error) {
       setMessage(err(error));
     } finally {
@@ -235,7 +251,9 @@ export default function App() {
     if (!id) return;
     const detail = await technicianApi.job(id);
     setSelectedJob(detail);
-    setAttachments(await technicianApi.attachments(id));
+    const [files, nextChecklist] = await Promise.all([technicianApi.attachments(id), technicianApi.checklist(id)]);
+    setAttachments(files);
+    setChecklist(nextChecklist);
     await loadCore();
   };
 
@@ -296,11 +314,11 @@ export default function App() {
       {screen === 'dashboard' && <Dashboard dashboard={dashboard} jobs={jobs?.items ?? []} visits={visits?.items ?? []} loading={loading} onRefresh={loadCore} onJobs={() => setScreen('jobs')} onJob={openJob} />}
       {screen === 'jobs' && <Jobs items={activeJobs} filter={jobFilter} loading={loading} onFilter={index => loadJobs(index).catch(error => setMessage(err(error)))} onJob={openJob} />}
       {screen === 'history' && <History items={history?.items ?? []} filter={historyFilter} onLoad={() => loadHistory().catch(error => setMessage(err(error)))} onFilter={index => loadHistory(index).catch(error => setMessage(err(error)))} onJob={openJob} />}
-      {screen === 'jobDetail' && selectedJob && <JobDetailScreen detail={selectedJob} tracking={tracking} attachments={attachments} onTransition={(status) => { setPendingStatus(status); setModal('transition'); }} onReport={() => setModal('report')} onAttach={() => setModal('attachment')} onDeleteAttachment={async id => { await technicianApi.deleteAttachment(selectedJob.request.id, id); await refreshJob(); }} />}
+      {screen === 'jobDetail' && selectedJob && <JobDetailScreen detail={selectedJob} tracking={tracking} attachments={attachments} checklist={checklist} completionOtp={completionOtp} onTransition={(status) => { setPendingStatus(status); setModal('transition'); }} onReport={() => setModal('report')} onAttach={() => setModal('attachment')} onDeleteAttachment={async id => { await technicianApi.deleteAttachment(selectedJob.request.id, id); await refreshJob(); }} onChecklistSave={async responses => { setChecklist(await technicianApi.saveChecklist(selectedJob.request.id, responses)); setMessage('Checklist saved.'); }} onRequestOtp={async () => { setCompletionOtp(await technicianApi.requestCompletionOtp(selectedJob.request.id)); setMessage('Completion OTP requested.'); }} onVerifyOtp={async (otpId, otp) => { setCompletionOtp(await technicianApi.verifyCompletionOtp(selectedJob.request.id, otpId, otp)); setMessage('Completion OTP verified.'); }} />}
       {screen === 'visits' && <Visits visits={visits?.items ?? []} loading={loading} onVisit={openVisit} onRefresh={loadCore} />}
       {screen === 'visitDetail' && selectedVisit && <VisitDetailScreen visit={selectedVisit} onStatus={status => { setPendingVisitStatus(status); setModal('transition'); }} onCancel={() => setModal('visitCancel')} onReschedule={() => setModal('reschedule')} onAdditional={() => setModal('additionalVisit')} />}
       {screen === 'notifications' && <Notifications page={notifications} onRefresh={loadCore} onRead={async id => { await technicianApi.markNotificationRead(id); await loadCore(); }} />}
-      {screen === 'profile' && <Profile profile={profile} dashboard={dashboard} onAvailability={async status => { setProfile(await technicianApi.updateAvailability(status)); await loadCore(); }} onLogout={logout} />}
+      {screen === 'profile' && <Profile profile={profile} dashboard={dashboard} privateAttachments={privateAttachments} onSaveProfile={async input => { setProfile(await technicianApi.updateProfile(input)); await loadCore(); }} onAvailability={async status => { setProfile(await technicianApi.updateAvailability(status)); await loadCore(); }} onPrivateAttach={() => setModal('privateAttachment')} onOpenPrivateAttachment={async file => { const url = technicianApi.privateAttachmentUrl(file.id); if (await Linking.canOpenURL(url)) await Linking.openURL(url); }} onDeletePrivateAttachment={async id => { await technicianApi.deletePrivateAttachment(id); await loadCore(); }} onLogout={logout} />}
       {!screen.endsWith('Detail') && <BottomNav screen={screen} onChange={next => {
         if (next === 'history') loadHistory().catch(error => setMessage(err(error)));
         setScreen(next);
@@ -331,6 +349,7 @@ export default function App() {
             requestedEndTime: values.requestedEndTime,
           });
           if (modal === 'attachment' && selectedJob) await technicianApi.uploadAttachment(selectedJob.request.id, parseAttachment(values));
+          if (modal === 'privateAttachment') await technicianApi.uploadPrivateAttachment(parseAttachment(values));
           setModal(null);
           setMessage('Saved successfully.');
           if (selectedJob) await refreshJob();
@@ -419,8 +438,10 @@ function History({items, filter, onLoad, onFilter, onJob}: {items: RequestView[]
   </View>;
 }
 
-function JobDetailScreen({detail, tracking, attachments, onTransition, onReport, onAttach, onDeleteAttachment}: {detail: JobDetail; tracking: TrackingState; attachments: AttachmentView[]; onTransition: (status: RequestStatus) => void; onReport: () => void; onAttach: () => void; onDeleteAttachment: (id: number) => void}) {
-  const actions = allowedTransitions(detail.request.status).filter(status => status !== 'COMPLETED' || !!detail.report);
+function JobDetailScreen({detail, tracking, attachments, checklist, completionOtp, onTransition, onReport, onAttach, onDeleteAttachment, onChecklistSave, onRequestOtp, onVerifyOtp}: {detail: JobDetail; tracking: TrackingState; attachments: AttachmentView[]; checklist: JobChecklistView | null; completionOtp: CompletionOtpState | null; onTransition: (status: RequestStatus) => void; onReport: () => void; onAttach: () => void; onDeleteAttachment: (id: number) => void; onChecklistSave: (responses: {itemId: number; checked?: boolean; valueText?: string}[]) => Promise<void>; onRequestOtp: () => Promise<void>; onVerifyOtp: (otpId: number, otp: string) => Promise<void>}) {
+  const checklistDone = !checklist || checklist.status === 'COMPLETED';
+  const otpDone = completionOtp?.status === 'VERIFIED';
+  const actions = allowedTransitions(detail.request.status).filter(status => status !== 'COMPLETED' || (!!detail.report && checklistDone && otpDone));
   const openAttachment = async (attachment: AttachmentView) => {
     const url = technicianApi.attachmentUrl(detail.request.id, attachment.id);
     const supported = await Linking.canOpenURL(url);
@@ -434,18 +455,48 @@ function JobDetailScreen({detail, tracking, attachments, onTransition, onReport,
       tracking.active ? 'Tracking active' : 'Tracking inactive',
       tracking.permission === 'denied' ? 'Location permission denied' : tracking.permission === 'granted' ? 'Location permission granted' : 'Location permission not requested',
       tracking.lastSubmittedAt ? `Last sent: ${new Date(tracking.lastSubmittedAt).toLocaleString()}` : null,
+      tracking.background ? `Background tracking: ${tracking.background}` : null,
       tracking.error,
     ]} />
     <Info title="Request" rows={[label(detail.request.serviceType), detail.request.description, detail.request.customerRemarks, detail.request.preferredVisitDate, detail.request.preferredTimeSlot]} />
     <Info title="Assignment" rows={[detail.activeAssignment?.status && label(detail.activeAssignment.status), detail.activeAssignment?.notes]} />
     <Info title="Report" rows={detail.report ? [detail.report.diagnosis, detail.report.workPerformed, detail.report.testingResult, detail.report.completionNotes] : ['No report saved yet.']} />
+    <ChecklistPanel checklist={checklist} onSave={onChecklistSave} />
+    <CompletionOtpPanel state={completionOtp} onRequest={onRequestOtp} onVerify={onVerifyOtp} />
     <Text style={styles.sectionHeading}>Lifecycle</Text>
+    {detail.request.status === 'TESTING' && !checklistDone ? <Text style={styles.errorText}>Complete all required checklist items before completing this job.</Text> : null}
+    {detail.request.status === 'TESTING' && !otpDone ? <Text style={styles.errorText}>Verify the customer completion OTP before completing this job.</Text> : null}
     {actions.map(status => <Pressable key={status} style={styles.primaryButton} onPress={() => onTransition(status)}><Text style={styles.primaryText}>{label(status)}</Text></Pressable>)}
     {detail.request.status === 'TESTING' ? <Pressable style={styles.primaryButton} onPress={onReport}><Text style={styles.primaryText}>Save service report</Text></Pressable> : null}
     <SectionTitle title="Attachments" action="Add" onAction={onAttach} />
     {attachments.map(item => <View key={item.id} style={styles.row}><Pressable style={styles.rowText} onPress={() => openAttachment(item)}><Text style={styles.rowText}>{item.originalFilename} ({Math.round(item.fileSize / 1024)} KB)</Text><Text style={styles.muted}>{item.contentType}</Text></Pressable><Pressable onPress={() => onDeleteAttachment(item.id)}><Text style={styles.danger}>Delete</Text></Pressable></View>)}
     {attachments.length === 0 ? <Empty text="No attachments yet." /> : null}
   </ScrollView>;
+}
+
+function ChecklistPanel({checklist, onSave}: {checklist: JobChecklistView | null; onSave: (responses: {itemId: number; checked?: boolean; valueText?: string}[]) => Promise<void>}) {
+  const [draft, setDraft] = useState<Record<number, {checked?: boolean; valueText?: string}>>({});
+  useEffect(() => {
+    const next: Record<number, {checked?: boolean; valueText?: string}> = {};
+    checklist?.responses.forEach(row => { next[row.itemId] = {checked: !!row.checked, valueText: row.valueText ?? ''}; });
+    setDraft(next);
+  }, [checklist?.id, checklist?.updatedAt]);
+  if (!checklist) return <Info title="Checklist" rows={['No active checklist template is assigned for this service type.']} />;
+  const update = (id: number, patch: {checked?: boolean; valueText?: string}) => setDraft(current => ({...current, [id]: {...current[id], ...patch}}));
+  const payload = checklist.items.map(item => ({itemId: item.id, checked: draft[item.id]?.checked, valueText: draft[item.id]?.valueText}));
+  return <View style={styles.card}><View style={styles.rowBetween}><Text style={styles.sectionHeading}>{checklist.templateName}</Text><Badge text={`${checklist.requiredCompleted}/${checklist.requiredTotal} required`} tone={checklist.status === 'COMPLETED' ? 'muted' : 'info'} /></View>
+    {checklist.items.map(item => <View key={item.id} style={styles.checkRow}><Pressable style={styles.checkBox} onPress={() => update(item.id, {checked: !draft[item.id]?.checked})}><Text style={styles.outlineText}>{draft[item.id]?.checked ? 'OK' : ''}</Text></Pressable><View style={styles.checkCopy}><Text style={styles.cardTitle}>{item.label}{item.required ? ' *' : ''}</Text>{item.description ? <Text style={styles.muted}>{item.description}</Text> : null}{item.inputType !== 'CHECKBOX' ? <TextInput style={styles.input} value={draft[item.id]?.valueText ?? ''} onChangeText={text => update(item.id, {valueText: text})} placeholder="Response" /> : null}</View></View>)}
+    <Pressable style={styles.primaryButton} onPress={() => onSave(payload)}><Text style={styles.primaryText}>Save checklist</Text></Pressable>
+  </View>;
+}
+
+function CompletionOtpPanel({state, onRequest, onVerify}: {state: CompletionOtpState | null; onRequest: () => Promise<void>; onVerify: (otpId: number, otp: string) => Promise<void>}) {
+  const [otp, setOtp] = useState('');
+  return <View style={styles.card}><Text style={styles.sectionHeading}>Completion OTP</Text><Text style={styles.muted}>Ask the customer for the completion OTP delivered through Valor communications. The code is never displayed in this app.</Text>
+    {state ? <Info title="OTP state" rows={[state.status, state.expiresAt ? `Expires: ${state.expiresAt}` : null, `Attempts remaining: ${state.attemptsRemaining}`]} /> : null}
+    <Pressable style={styles.outlineButton} onPress={onRequest}><Text style={styles.outlineText}>Request OTP</Text></Pressable>
+    {state && state.status !== 'VERIFIED' ? <><Input label="Customer OTP" value={otp} onChangeText={setOtp} /><Pressable style={styles.primaryButton} disabled={otp.length < 4} onPress={() => onVerify(state.id, otp)}><Text style={styles.primaryText}>Verify OTP</Text></Pressable></> : null}
+  </View>;
 }
 
 function Visits({visits, loading, onVisit, onRefresh}: {visits: VisitView[]; loading: boolean; onVisit: (visit: VisitView) => void; onRefresh: () => void}) {
@@ -479,13 +530,26 @@ function Notifications({page, onRefresh, onRead}: {page: PageView<NotificationVi
   </View>;
 }
 
-function Profile({profile, dashboard, onAvailability, onLogout}: {profile: TechnicianProfileView | null; dashboard: TechnicianDashboard | null; onAvailability: (status: AvailabilityStatus) => void; onLogout: () => void}) {
+function Profile({profile, dashboard, privateAttachments, onSaveProfile, onAvailability, onPrivateAttach, onOpenPrivateAttachment, onDeletePrivateAttachment, onLogout}: {profile: TechnicianProfileView | null; dashboard: TechnicianDashboard | null; privateAttachments: PrivateAttachmentView[]; onSaveProfile: (input: Partial<TechnicianProfileView>) => Promise<void>; onAvailability: (status: AvailabilityStatus) => void; onPrivateAttach: () => void; onOpenPrivateAttachment: (file: PrivateAttachmentView) => void; onDeletePrivateAttachment: (id: number) => void; onLogout: () => void}) {
+  const [draft, setDraft] = useState<Partial<TechnicianProfileView>>({});
+  useEffect(() => setDraft(profile ?? {}), [profile?.technicianProfileId, profile?.updatedAt]);
+  const update = (key: keyof TechnicianProfileView, value: string) => setDraft(current => ({...current, [key]: value}));
   return <ScrollView contentContainerStyle={styles.content}>
     <Text style={styles.title}>Profile</Text>
     <Info title="Technician" rows={[profile?.email, profile?.phone, profile?.employeeId, profile?.assignedArea, profile?.specialization]} />
+    <Input label="Profile photo URL" value={String(draft.profilePhotoUrl ?? '')} onChangeText={text => update('profilePhotoUrl', text)} />
+    <Input label="Date of birth (YYYY-MM-DD)" value={String(draft.dateOfBirth ?? '')} onChangeText={text => update('dateOfBirth', text)} />
+    <Input label="Gender" value={String(draft.gender ?? '')} onChangeText={text => update('gender', text)} />
+    <Input label="Address" value={String(draft.address ?? '')} onChangeText={text => update('address', text)} multiline />
+    <Input label="Emergency contact name" value={String(draft.emergencyContactName ?? '')} onChangeText={text => update('emergencyContactName', text)} />
+    <Input label="Emergency contact phone" value={String(draft.emergencyContactPhone ?? '')} onChangeText={text => update('emergencyContactPhone', text)} />
+    <Pressable style={styles.primaryButton} onPress={() => onSaveProfile(draft)}><Text style={styles.primaryText}>Save profile</Text></Pressable>
     <Info title="Performance" rows={[`Completed jobs: ${dashboard?.completedJobs ?? 0}`, `This quarter: ${dashboard?.completedThisQuarter ?? 0}`]} />
     <Text style={styles.sectionHeading}>Availability</Text>
     {AVAILABILITY.map(status => <Pressable key={status} style={[styles.outlineButton, profile?.availabilityStatus === status && styles.selected]} onPress={() => onAvailability(status)}><Text style={styles.outlineText}>{label(status)}</Text></Pressable>)}
+    <SectionTitle title="Technician-private attachments" action="Add" onAction={onPrivateAttach} />
+    {privateAttachments.map(file => <View key={file.id} style={styles.row}><Pressable style={styles.rowText} onPress={() => onOpenPrivateAttachment(file)}><Text style={styles.rowText}>{file.originalFilename}</Text><Text style={styles.muted}>{file.contentType} - {Math.round(file.fileSize / 1024)} KB</Text></Pressable><Pressable onPress={() => onDeletePrivateAttachment(file.id)}><Text style={styles.danger}>Delete</Text></Pressable></View>)}
+    {privateAttachments.length === 0 ? <Empty text="No technician-private attachments." /> : null}
     <Pressable style={styles.dangerButton} onPress={onLogout}><Text style={styles.primaryText}>Logout</Text></Pressable>
   </ScrollView>;
 }
@@ -550,7 +614,7 @@ function ActionModal({mode, onClose, onSubmit, onError}: {mode: ModalMode | null
   return <Modal visible={!!mode} animationType="slide" onRequestClose={onClose} transparent>
     <View style={styles.modalBackdrop}><View style={styles.modal}>
       <Text style={styles.sectionHeading}>{modalTitle(mode)}</Text>
-      {mode === 'attachment' ? <>
+      {mode === 'attachment' || mode === 'privateAttachment' ? <>
         <Text style={styles.muted}>Choose a JPEG, PNG, WebP, or PDF up to 10 MB.</Text>
         <View style={styles.attachmentActions}>
           <Pressable style={styles.outlineButton} onPress={() => chooseImage('camera')}><Text style={styles.outlineText}>Camera</Text></Pressable>
@@ -570,7 +634,7 @@ function modalFields(mode: ModalMode | null) {
   if (mode === 'transition') return ['notes'];
   if (mode === 'visitCancel') return ['reason'];
   if (mode === 'reschedule' || mode === 'additionalVisit') return ['reason', 'requestedDate', 'requestedStartTime', 'requestedEndTime'];
-  if (mode === 'attachment') return [];
+  if (mode === 'attachment' || mode === 'privateAttachment') return [];
   return [];
 }
 
@@ -580,6 +644,7 @@ function modalTitle(mode: ModalMode | null) {
   if (mode === 'reschedule') return 'Request reschedule';
   if (mode === 'additionalVisit') return 'Request additional visit';
   if (mode === 'attachment') return 'Upload attachment';
+  if (mode === 'privateAttachment') return 'Upload technician-private attachment';
   return 'Confirm action';
 }
 
@@ -705,6 +770,9 @@ const styles = StyleSheet.create({
   row: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12, marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', gap: 8},
   rowText: {color: colors.text, flex: 1},
   rowBetween: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10},
+  checkRow: {flexDirection: 'row', gap: 10, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border},
+  checkBox: {width: 44, height: 40, borderRadius: 10, borderWidth: 1, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center'},
+  checkCopy: {flex: 1, minWidth: 0},
   empty: {backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 18, alignItems: 'center', marginVertical: 8},
   badge: {alignSelf: 'flex-start', backgroundColor: '#E2F1EF', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5},
   badgeDanger: {backgroundColor: '#F9E0E0'},

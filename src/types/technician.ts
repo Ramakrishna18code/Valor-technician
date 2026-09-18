@@ -72,6 +72,13 @@ export interface TechnicianProfileView {
   availabilityStatus: AvailabilityStatus;
   active: boolean;
   lastActiveAt?: string | null;
+  updatedAt?: string | null;
+  profilePhotoUrl?: string | null;
+  dateOfBirth?: string | null;
+  gender?: string | null;
+  address?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
 }
 
 export interface TechnicianDashboard {
@@ -199,6 +206,68 @@ export interface AttachmentView {
   fileSize: number;
   uploadedByUserId: number;
   createdAt?: string | null;
+}
+
+export interface PrivateAttachmentView {
+  id: number;
+  technicianProfileId: number;
+  originalFilename: string;
+  contentType: string;
+  fileSize: number;
+  uploadedByUserId: number;
+  createdAt?: string | null;
+}
+
+export type ChecklistInputType = 'CHECKBOX' | 'TEXT' | 'NUMBER' | 'PHOTO_NOTE';
+export interface ChecklistItemView {
+  id: number;
+  templateId: number;
+  label: string;
+  description?: string | null;
+  required: boolean;
+  sortOrder: number;
+  inputType: ChecklistInputType;
+}
+export interface ChecklistResponseView {
+  itemId: number;
+  checked?: boolean | null;
+  valueText?: string | null;
+  technicianProfileId?: number | null;
+  respondedAt?: string | null;
+}
+export interface JobChecklistView {
+  id: number;
+  serviceRequestId: number;
+  serviceVisitId?: number | null;
+  templateId: number;
+  templateName: string;
+  templateVersion: number;
+  status: 'IN_PROGRESS' | 'COMPLETED';
+  requiredTotal: number;
+  requiredCompleted: number;
+  items: ChecklistItemView[];
+  responses: ChecklistResponseView[];
+  updatedAt?: string | null;
+}
+export interface CompletionOtpState {
+  id: number;
+  serviceRequestId: number;
+  status: 'PENDING' | 'VERIFIED' | 'EXPIRED' | 'LOCKED' | string;
+  expiresAt?: string | null;
+  attemptsRemaining: number;
+  lockedUntil?: string | null;
+  verifiedAt?: string | null;
+}
+
+export type CommunicationChannel = 'EMAIL' | 'SMS' | 'WHATSAPP' | 'IN_APP';
+export type CommunicationDeliveryStatus = 'PENDING' | 'PROCESSING' | 'SENT' | 'DELIVERED' | 'FAILED' | 'CANCELLED';
+
+export interface CommunicationPreference {
+  userId: number;
+  emailEnabled: boolean;
+  smsEnabled: boolean;
+  whatsappEnabled: boolean;
+  inAppEnabled: boolean;
 }
 
 export interface NotificationView {

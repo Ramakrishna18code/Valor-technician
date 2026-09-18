@@ -13,13 +13,18 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Valor uses your location only while an active assigned job is open so customers can see your latest job location."
+        ,"NSLocationAlwaysAndWhenInUseUsageDescription": "Valor uses background location only while an active assigned job is being serviced."
+        ,"UIBackgroundModes": ["location"]
       }
     },
     "android": {
       "package": "com.valor.technician",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "plugins": [
@@ -27,6 +32,9 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Valor uses your location only while an active assigned job is open so customers can see your latest job location."
+          ,"locationAlwaysAndWhenInUsePermission": "Valor uses background location only while an active assigned job is being serviced."
+          ,"isAndroidBackgroundLocationEnabled": true
+          ,"isIosBackgroundLocationEnabled": true
         }
       ]
     ],

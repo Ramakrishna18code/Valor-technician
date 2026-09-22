@@ -92,6 +92,8 @@ notifications, fake GPS coordinates, or legacy Technician API success states.
 - Foreground latest-location submission for active trackable jobs
 - Job history screen with All, Completed, Cancelled, and Emergency filters
 - Profile sub-pages for personal information, administrator-managed password support, help/FAQ, location, language, theme, and notification preferences
+- Technician registration uses the temporary four-digit OTP `1111` until SMS provider keys are configured; this must be replaced before production SMS activation.
+- Aadhaar and driving licence are captured as optional identity numbers, not uploads. All other registration documents are optional until the Admin verification screens are enabled.
 
 Availability values are exactly `AVAILABLE`, `BUSY`, `OFF_DUTY`, and
 `ON_LEAVE`.

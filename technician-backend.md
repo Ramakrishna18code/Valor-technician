@@ -228,12 +228,14 @@ Approval provisions the shared `users` and `technician_profiles` rows with role 
 ### Anonymous application APIs
 
 - `POST /api/v1/technician-applications` creates a draft from `fullName`, `email`, `phone`, and `password`. The response returns `application` and an opaque `applicationToken`; the token is held only by the client during onboarding.
-- `POST /api/v1/technician-applications/{id}/otp/send` with `X-Application-Token` sends the mobile OTP. Development/test responses may expose the OTP; production delivery must be supplied by the configured provider.
-- `POST /api/v1/technician-applications/{id}/otp/verify` with `X-Application-Token` and `{ "otp": "123456" }` marks the application `OTP_VERIFIED`.
+- `POST /api/v1/technician-applications/{id}/otp/send` with `X-Application-Token` sends the mobile OTP. Until SMS provider keys are configured, the response uses the temporary four-digit OTP `1111`.
+- `POST /api/v1/technician-applications/{id}/otp/verify` with `X-Application-Token` and `{ "otp": "1111" }` marks the application `OTP_VERIFIED`.
 - `PUT /api/v1/technician-applications/{id}` saves professional details: `experience`, `specialization`, `liftBrands`, `certifications`, `highestQualification`, `handsOnExperience`, `preferredLocations`, `willingToWorkAtHeights`, `travelAvailability`, and `additionalNotes`.
-- `POST /api/v1/technician-applications/{id}/documents` accepts multipart `documentType` and `file` with `X-Application-Token`. Supported types are `PROFILE_PHOTO`, `AADHAAR_CARD`, `DRIVING_LICENSE`, `EDUCATIONAL_CERTIFICATE`, `EXPERIENCE_CERTIFICATE`, `TECHNICAL_CERTIFICATION`, `ADDRESS_PROOF`, and `MEDICAL_FITNESS_CERTIFICATE`. Supported formats are JPG, PNG, and PDF up to 5 MB per file.
+- `POST /api/v1/technician-applications/{id}/documents` accepts multipart `documentType` and `file` with `X-Application-Token`. Supported optional upload types are `PROFILE_PHOTO`, `EDUCATIONAL_CERTIFICATE`, `EXPERIENCE_CERTIFICATE`, `TECHNICAL_CERTIFICATION`, `ADDRESS_PROOF`, and `MEDICAL_FITNESS_CERTIFICATE`. Aadhaar and driving licence are optional number fields, not document uploads. Supported formats are JPG, PNG, and PDF up to 5 MB per file.
 - `GET /api/v1/technician-applications/{id}` reads the applicant's current status and uploaded document metadata with `X-Application-Token`.
-- `POST /api/v1/technician-applications/{id}/submit` validates OTP, professional details, and at least one document, then moves the application to `SUBMITTED`.
+- `POST /api/v1/technician-applications/{id}/submit` validates OTP and professional details, then moves the application to `SUBMITTED`; document uploads are optional for now.
+
+Temporary onboarding behavior: the technician registration OTP is the fixed four-digit value `1111` until SMS provider keys are configured. Uploaded documents are optional and Admin verification remains a later review step; the application can be submitted without files.
 
 ### Admin review APIs
 

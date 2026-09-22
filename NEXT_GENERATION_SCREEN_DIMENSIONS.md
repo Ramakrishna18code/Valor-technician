@@ -144,7 +144,7 @@ Keep all five filters readable: All, Pending, Accepted, In Progress, Completed. 
 | Element | Dimension |
 | --- | --- |
 | Navigation height | `72px–80px` plus safe-area inset where required |
-| Number of items | 5: Home, Jobs, Schedule, Notifications, Profile |
+| Number of items | 6: Home, Jobs, Visits, Alerts, History, Profile |
 | Navigation icon | `24 × 24px` |
 | Navigation label | `11px–12px` |
 

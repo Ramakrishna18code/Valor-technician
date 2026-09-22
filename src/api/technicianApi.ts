@@ -4,6 +4,7 @@ import {requestData, unwrapEnvelope} from './client';
 import type {
   AttachmentView,
   CompletionOtpState,
+  ArrivalOtpState,
   Authentication,
   JobChecklistView,
   CurrentUser,
@@ -22,6 +23,7 @@ import type {
   VisitStatus,
   VisitView,
   AvailabilityStatus,
+  TechnicianServicePayment,
 } from '../types/technician';
 
 export interface LoginInput {
@@ -149,6 +151,10 @@ export const technicianApi = {
     });
   },
 
+  technicianLocation(id: number) {
+    return requestData<import('../types/technician').LocationView>({method: 'GET', url: `/api/v1/technician/me/jobs/${id}/location`});
+  },
+
   visits(query: VisitsQuery = {}) {
     return requestData<PageView<VisitView>>({
       method: 'GET',
@@ -233,6 +239,26 @@ export const technicianApi = {
 
   verifyCompletionOtp(requestId: number, otpId: number, otp: string) {
     return requestData<CompletionOtpState>({method: 'POST', url: `/api/v1/technician/me/jobs/${requestId}/completion-otp/verify`, data: {otpId, otp}});
+  },
+
+  requestArrivalOtp(requestId: number) {
+    return requestData<ArrivalOtpState>({method: 'POST', url: `/api/v1/technician/me/jobs/${requestId}/arrival-otp/request`, data: {}});
+  },
+
+  verifyArrivalOtp(requestId: number, otpId: number, otp: string) {
+    return requestData<ArrivalOtpState>({method: 'POST', url: `/api/v1/technician/me/jobs/${requestId}/arrival-otp/verify`, data: {otpId, otp}});
+  },
+
+  arrivalOtp(requestId: number) {
+    return requestData<ArrivalOtpState | null>({method: 'GET', url: `/api/v1/service-requests/${requestId}/arrival-otp`});
+  },
+
+  servicePayment(requestId: number) {
+    return requestData<TechnicianServicePayment>({method: 'GET', url: `/api/v1/technician/me/jobs/${requestId}/payment`});
+  },
+
+  verifyCashPayment(input: {paymentId: number; otpId: number; otp: string}) {
+    return requestData<{id: number; paymentId: number; status: string}>({method: 'POST', url: '/api/v1/payments/cash/otp/verify', data: input});
   },
 
   privateAttachments() {

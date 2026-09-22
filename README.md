@@ -87,8 +87,11 @@ notifications, fake GPS coordinates, or legacy Technician API success states.
   additional-visit requests. Reschedule/additional requests wait for Admin
   approval; the Technician app does not directly create approved visits.
 - Notifications list and read state using the shared notification inbox
+- Alerts screen with All, Jobs, Emergency, and Messages filters plus mark-all-as-read for the loaded inbox
 - Technician profile read and availability update
 - Foreground latest-location submission for active trackable jobs
+- Job history screen with All, Completed, Cancelled, and Emergency filters
+- Profile sub-pages for personal information, administrator-managed password support, help/FAQ, location, language, theme, and notification preferences
 
 Availability values are exactly `AVAILABLE`, `BUSY`, `OFF_DUTY`, and
 `ON_LEAVE`.
@@ -122,6 +125,17 @@ target device or emulator.
 Device/emulator validation was not performed in this phase. Real GPS behavior,
 camera/gallery permission flows, and physical file picker behavior must still be
 accepted manually in Expo Go by the tester.
+
+## Technician service lifecycle and payment safety
+
+The job detail screen uses the shared workflow contract for normal and emergency jobs. The lifecycle is `ASSIGNED` -> `ACCEPTED` -> `ON_THE_WAY` -> `REACHED_SITE` -> `DIAGNOSIS` -> `REPAIR_IN_PROGRESS` or `WAITING_FOR_PARTS` -> `TESTING` -> `COMPLETED`.
+
+- The customer arrival OTP is requested after `REACHED_SITE` and must be verified before the technician enters `DIAGNOSIS`.
+- The customer completion OTP is requested only during `TESTING` and is required with the service report and checklist before completion.
+- Cash payment verification appears only when the shared backend exposes a customer-created cash payment and OTP. The technician never receives the customer OTP from a read endpoint; the customer supplies it in person and the technician verifies it.
+- Invoice/payment state is read from `/api/v1/technician/me/jobs/{id}/payment`; the app never invents a quote or payment success.
+- Route/ETA state is read from `/api/v1/technician/me/jobs/{id}/location`. If coordinates or a routing provider are unavailable, the app shows that state instead of fabricated map data.
+- Reschedule and additional-visit actions use the existing visit change-request APIs and remain subject to backend/admin review.
 
 ## Phase 15 advanced operations
 

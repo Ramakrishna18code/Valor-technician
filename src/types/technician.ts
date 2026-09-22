@@ -160,6 +160,9 @@ export interface LocationView {
   timestamp: string;
   stale: boolean;
   trackingState: string;
+  geofence?: {state?: string; distanceMeters?: number | null; radiusMeters?: number | null} | null;
+  route?: {available: boolean; distanceMeters?: number | null; durationSeconds?: number | null; status?: string; polyline?: Array<{latitude: number; longitude: number}>} | null;
+  eta?: {available: boolean; etaAt?: string | null; durationSeconds?: number | null; status?: string} | null;
 }
 
 export interface VisitView {
@@ -257,6 +260,24 @@ export interface CompletionOtpState {
   attemptsRemaining: number;
   lockedUntil?: string | null;
   verifiedAt?: string | null;
+}
+
+export interface ArrivalOtpState {
+  id: number;
+  serviceRequestId: number;
+  status: 'PENDING' | 'VERIFIED' | 'EXPIRED' | 'LOCKED' | string;
+  expiresAt?: string | null;
+  attemptsRemaining: number;
+  lockedUntil?: string | null;
+  verifiedAt?: string | null;
+  code?: string | null;
+}
+
+export interface TechnicianServicePayment {
+  serviceRequestId: number;
+  invoice?: {id: number; invoiceNumber?: string | null; description?: string | null; totalAmount?: number; currency?: string; status?: string} | null;
+  payment?: {id: number; status?: string; providerReference?: string | null; amount?: number; currency?: string} | null;
+  cashOtp?: {id: number; paymentId: number; status: string; expiresAt?: string | null; attemptsRemaining: number; verifiedAt?: string | null} | null;
 }
 
 export type CommunicationChannel = 'EMAIL' | 'SMS' | 'WHATSAPP' | 'IN_APP';

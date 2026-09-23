@@ -5,6 +5,7 @@ import {
   FlatList,
   Linking,
   Modal,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -17,6 +18,7 @@ import {
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
+import { Ionicons } from "@expo/vector-icons";
 import { environment } from "./config/environment";
 import { setSessionExpiredHandler } from "./api/client";
 import { technicianApi } from "./api/technicianApi";
@@ -57,6 +59,7 @@ type Screen =
   | "visits"
   | "notifications"
   | "history"
+  | "reports"
   | "profile"
   | "profileDetails"
   | "profilePassword"
@@ -66,6 +69,12 @@ type Screen =
   | "profileTheme"
   | "profileNotifications"
   | "profileAbout"
+  | "emergencyRequests"
+  | "support"
+  | "scanQr"
+  | "requestParts"
+  | "reportIssue"
+  | "safety"
   | "jobDetail"
   | "visitDetail";
 type ModalMode =
@@ -94,6 +103,7 @@ type TrackingState = {
   background?: string;
   error?: string;
 };
+type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 
 const IN_PROGRESS: RequestStatus[] = [
   "ACCEPTED",
@@ -133,6 +143,16 @@ const JOB_FILTERS: Array<{
   { label: "Completed", status: "COMPLETED" },
   { label: "Cancelled", status: "CANCELLED" },
 ];
+const DATE_FILTERS = [
+  { label: "Today", key: "today" },
+  { label: "Tomorrow", key: "tomorrow" },
+  { label: "This Week", key: "thisWeek" },
+  { label: "Next Week", key: "nextWeek" },
+  { label: "This Month", key: "thisMonth" },
+  { label: "Next Month", key: "nextMonth" },
+  { label: "Past Month", key: "pastMonth" },
+  { label: "All", key: "all" },
+] as const;
 const AVAILABILITY: AvailabilityStatus[] = [
   "AVAILABLE",
   "BUSY",
@@ -155,10 +175,141 @@ const label = (value?: string | null) =>
         .toLowerCase()
         .replace(/\b\w/g, (c) => c.toUpperCase())
     : "Unavailable";
+const normalizeDate = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const parseJobDate = (job: RequestView) => {
+  const raw = job.preferredVisitDate || job.createdAt || job.updatedAt;
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : normalizeDate(parsed);
+};
+const sameDay = (a: Date, b: Date) => a.getTime() === b.getTime();
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return normalizeDate(next);
+};
+const todayOnly = (jobs: RequestView[]) => {
+  const today = normalizeDate(new Date());
+  return jobs.filter((job) => {
+    const date = parseJobDate(job);
+    return !date || sameDay(date, today);
+  });
+};
+const formatTimeSlot = (slot?: string | null) => {
+  if (!slot) return "Scheduled";
+  return slot.replace(/\s*-\s*/g, "\n-");
+};
+const unreadCountFromJobs = (
+  jobs: RequestView[],
+  dashboard: TechnicianDashboard | null,
+) =>
+  dashboard?.emergencyJobs ??
+  jobs.filter((job) => job.priority === "EMERGENCY").length;
+const filterJobsByDate = (
+  jobs: RequestView[],
+  key: (typeof DATE_FILTERS)[number]["key"],
+  yearText: string,
+  monthText: string,
+) => {
+  if (key === "all") return jobs;
+  const today = normalizeDate(new Date());
+  const tomorrow = addDays(today, 1);
+  const weekDay = today.getDay() || 7;
+  const thisWeekStart = addDays(today, 1 - weekDay);
+  const thisWeekEnd = addDays(thisWeekStart, 6);
+  const nextWeekStart = addDays(thisWeekStart, 7);
+  const nextWeekEnd = addDays(nextWeekStart, 6);
+  const year = Number(yearText) || today.getFullYear();
+  const month = Math.min(Math.max(Number(monthText) || today.getMonth() + 1, 1), 12) - 1;
+  const inRange = (date: Date | null, start: Date, end: Date) =>
+    !!date && date >= start && date <= end;
+  return jobs.filter((job) => {
+    const date = parseJobDate(job);
+    if (key === "today") return !date || sameDay(date, today);
+    if (key === "tomorrow") return !!date && sameDay(date, tomorrow);
+    if (key === "thisWeek") return inRange(date, thisWeekStart, thisWeekEnd);
+    if (key === "nextWeek") return inRange(date, nextWeekStart, nextWeekEnd);
+    if (key === "thisMonth")
+      return !!date && date.getFullYear() === year && date.getMonth() === month;
+    if (key === "nextMonth") {
+      const nextMonth = new Date(year, month + 1, 1);
+      return (
+        !!date &&
+        date.getFullYear() === nextMonth.getFullYear() &&
+        date.getMonth() === nextMonth.getMonth()
+      );
+    }
+    if (key === "pastMonth") {
+      const pastMonth = new Date(year, month - 1, 1);
+      return (
+        !!date &&
+        date.getFullYear() === pastMonth.getFullYear() &&
+        date.getMonth() === pastMonth.getMonth()
+      );
+    }
+    return true;
+  });
+};
 const requestTitle = (request: RequestView) =>
   request.serviceId || `SR-${request.id}`;
 const requestSummary = (request: RequestView) =>
   request.title || request.description || label(request.serviceType);
+const fieldText = (source: Record<string, unknown>, keys: string[]) => {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number") return String(value);
+  }
+  return "";
+};
+const jobInfo = (request: RequestView) => {
+  const source = request as Record<string, unknown>;
+  const building =
+    fieldText(source, ["buildingName", "building", "siteName", "assetName"]) ||
+    requestSummary(request);
+  const location =
+    fieldText(source, [
+      "location",
+      "buildingAddress",
+      "address",
+      "siteAddress",
+      "city",
+    ]) || "Location pending";
+  const lift =
+    fieldText(source, ["liftName", "liftNumber", "liftLabel"]) ||
+    (request.liftId ? `Lift ${request.liftId}` : "Lift details pending");
+  const persons =
+    fieldText(source, ["persons", "passengerCapacity", "capacity"]) ||
+    "15 Persons";
+  const customer =
+    fieldText(source, ["customerName", "ownerName", "contactName"]) ||
+    (request.customerProfileId
+      ? `Customer ${request.customerProfileId}`
+      : "Customer");
+  const phone =
+    fieldText(source, [
+      "customerPhone",
+      "primaryPhone",
+      "phone",
+      "mobile",
+      "contactPhone",
+    ]) || "";
+  const instructions =
+    request.customerRemarks ||
+    fieldText(source, ["specialInstructions", "instructions", "remarks"]);
+  return { building, location, lift, persons, customer, phone, instructions };
+};
+const callPhone = async (phone?: string) => {
+  if (!phone) return;
+  const url = `tel:${phone}`;
+  if (await Linking.canOpenURL(url)) await Linking.openURL(url);
+};
+const messagePhone = async (phone?: string) => {
+  if (!phone) return;
+  const url = `sms:${phone}`;
+  if (await Linking.canOpenURL(url)) await Linking.openURL(url);
+};
 const visitTitle = (visit: VisitView) =>
   visit.serviceId || `Request ${visit.serviceRequestId}`;
 const visitContext = (visit: VisitView) =>
@@ -523,18 +674,28 @@ export default function App() {
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <View style={styles.app}>
-        <Header
-          screen={screen}
-          onBack={() =>
-            setScreen(
-              screen === "visitDetail"
-                ? "visits"
-                : screen.startsWith("profile") && screen !== "profile"
-                  ? "profile"
-                  : "jobs",
-            )
-          }
-        />
+        {needsHeader(screen) ? (
+          <Header
+            screen={screen}
+            onBack={() =>
+              setScreen(
+                screen === "visitDetail"
+                  ? "visits"
+                  : screen === "emergencyRequests"
+                    ? "dashboard"
+                    : screen === "support" ||
+                        screen === "scanQr" ||
+                        screen === "requestParts" ||
+                        screen === "reportIssue" ||
+                        screen === "safety"
+                      ? "dashboard"
+                      : screen.startsWith("profile") && screen !== "profile"
+                        ? "profile"
+                        : "jobs",
+              )
+            }
+          />
+        ) : null}
         {message ? (
           <Banner message={message} onDismiss={() => setMessage(null)} />
         ) : null}
@@ -549,7 +710,12 @@ export default function App() {
             onJob={openJob}
             onStartJob={async (job) => {
               try {
-                await technicianApi.transition(job.id, "ACCEPTED");
+                if (job.status === "ASSIGNED") {
+                  await technicianApi.transition(job.id, "ACCEPTED");
+                  await technicianApi.transition(job.id, "ON_THE_WAY");
+                } else if (job.status === "ACCEPTED") {
+                  await technicianApi.transition(job.id, "ON_THE_WAY");
+                }
                 await loadCore();
               } catch (error) {
                 setMessage(err(error));
@@ -557,6 +723,14 @@ export default function App() {
             }}
             onNotifications={() => setScreen("notifications")}
             onProfile={() => setScreen("profile")}
+            onMenu={() => setScreen("profile")}
+            onEmergency={() => setScreen("emergencyRequests")}
+            onSupport={() => setScreen("support")}
+            onScanQr={() => setScreen("scanQr")}
+            onRequestParts={() => setScreen("requestParts")}
+            onHistory={() => setScreen("history")}
+            onReportIssue={() => setScreen("reportIssue")}
+            onSafety={() => setScreen("safety")}
           />
         )}
         {screen === "jobs" && (
@@ -570,7 +744,12 @@ export default function App() {
             onJob={openJob}
             onStartJob={async (job) => {
               try {
-                await technicianApi.transition(job.id, "ACCEPTED");
+                if (job.status === "ASSIGNED") {
+                  await technicianApi.transition(job.id, "ACCEPTED");
+                  await technicianApi.transition(job.id, "ON_THE_WAY");
+                } else if (job.status === "ACCEPTED") {
+                  await technicianApi.transition(job.id, "ON_THE_WAY");
+                }
                 await loadJobs(jobFilter);
               } catch (error) {
                 setMessage(err(error));
@@ -591,6 +770,35 @@ export default function App() {
             onJob={openJob}
           />
         )}
+        {screen === "reports" && (
+          <ReportsPage
+            jobs={jobs?.items ?? []}
+            dashboard={dashboard}
+            onHistory={() =>
+              loadHistory()
+                .then(() => setScreen("history"))
+                .catch((error) => setMessage(err(error)))
+            }
+            onIssue={() => setScreen("reportIssue")}
+          />
+        )}
+        {screen === "emergencyRequests" && (
+          <EmergencyRequestsPage
+            jobs={(jobs?.items ?? []).filter(
+              (item) =>
+                item.priority === "EMERGENCY" ||
+                item.serviceType === "EMERGENCY",
+            )}
+            onJob={openJob}
+          />
+        )}
+        {screen === "support" && <SupportPage profile={profile} />}
+        {screen === "scanQr" && <DeferredActionPage title="Scan QR" />}
+        {screen === "requestParts" && (
+          <DeferredActionPage title="Request Parts" />
+        )}
+        {screen === "reportIssue" && <ReportIssuePage />}
+        {screen === "safety" && <SafetyPage />}
         {screen === "jobDetail" && selectedJob && (
           <JobDetailScreen
             detail={selectedJob}
@@ -754,6 +962,7 @@ export default function App() {
         {screen === "profileTheme" && <ThemePage />}
         {screen === "profileNotifications" && (
           <Notifications
+            variant="notifications"
             page={notifications}
             onRefresh={loadCore}
             onRead={async (id) => {
@@ -769,8 +978,7 @@ export default function App() {
           />
         )}
         {screen === "profileAbout" && <AboutPage />}
-        {!screen.endsWith("Detail") &&
-          !(screen.startsWith("profile") && screen !== "profile") && (
+        {!needsHeader(screen) && (
             <BottomNav
               screen={screen}
               onChange={(next) => {
@@ -801,6 +1009,13 @@ export default function App() {
                 pendingStatus,
                 values.notes,
               );
+              if (pendingStatus === "ACCEPTED") {
+                await technicianApi.transition(
+                  selectedJob.request.id,
+                  "ON_THE_WAY",
+                  values.notes,
+                );
+              }
               if (pendingStatus === "REACHED_SITE")
                 setArrivalOtp(
                   await technicianApi.requestArrivalOtp(selectedJob.request.id),
@@ -1171,7 +1386,9 @@ function AuthFrame({
     <View style={styles.authFrame}>
       <View style={styles.authTop}>
         <Pressable onPress={onBack} style={styles.authBack}>
-          <Text style={styles.authBackText}>{onBack ? "‹" : ""}</Text>
+          {onBack ? (
+            <AppIcon name="chevron-back" size={24} color={colors.primary} />
+          ) : null}
         </Pressable>
         <View style={styles.brand}>
           <Text style={styles.brandMark}>V</Text>
@@ -1194,7 +1411,7 @@ function AuthFrame({
                   ]}
                 >
                   <Text style={styles.stepDotText}>
-                    {index + 1 <= step ? "✓" : index + 1}
+                    {index + 1 <= step ? "OK" : index + 1}
                   </Text>
                 </View>
                 <Text style={styles.stepLabel}>{item}</Text>
@@ -1277,7 +1494,7 @@ function BasicDetailsScreen({
       />
       {message ? <Text style={styles.authError}>{message}</Text> : null}
       <View style={styles.infoStrip}>
-        <Text style={styles.infoIcon}>i</Text>
+        <AppIcon name="information-circle" size={18} color={colors.info} />
         <Text style={styles.infoText}>
           Use at least 8 characters with a mix of letters, numbers and a special
           character.
@@ -1318,7 +1535,7 @@ function OtpScreen({
   return (
     <AuthFrame onBack={onBack}>
       <View style={styles.otpIllustration}>
-        <Text style={styles.otpPhone}>▯</Text>
+        <AppIcon name="phone-portrait-outline" size={44} color={colors.info} />
         <Text style={styles.otpBubble}>OTP</Text>
       </View>
       <Text style={styles.otpTitle}>Verify Your Mobile Number</Text>
@@ -1492,9 +1709,7 @@ function ProfessionalDetailsScreen({
         onPress={onNext}
         disabled={loading}
       />
-      <Text style={styles.authLink} onPress={onBack}>
-        Back
-      </Text>
+      <AuthBackLink onPress={onBack} />
     </AuthFrame>
   );
 }
@@ -1540,12 +1755,12 @@ function DocumentsScreen({
           style={styles.documentRow}
           onPress={() => onUpload(item.type)}
         >
-          <Text style={styles.documentIcon}>▣</Text>
+          <View style={styles.documentIcon}><AppIcon name="document-text-outline" size={17} color={colors.info} /></View>
           <View style={styles.documentCopy}>
             <Text style={styles.documentTitle}>{item.label}</Text>
             <Text style={styles.documentMeta}>
               {all[item.type]?.originalFilename ||
-                "Optional · PDF, JPG or PNG up to 5 MB"}
+                "Optional - PDF, JPG or PNG up to 5 MB"}
             </Text>
           </View>
           <Text style={all[item.type] ? styles.uploaded : styles.uploadAction}>
@@ -1554,7 +1769,7 @@ function DocumentsScreen({
         </Pressable>
       ))}
       <View style={styles.infoStrip}>
-        <Text style={styles.infoIcon}>i</Text>
+        <AppIcon name="information-circle" size={18} color={colors.info} />
         <Text style={styles.infoText}>
           Aadhaar and driving licence are recorded as numbers, not uploaded
           documents. All file uploads are optional until Admin verification is
@@ -1567,9 +1782,7 @@ function DocumentsScreen({
         onPress={onNext}
         disabled={loading}
       />
-      <Text style={styles.authLink} onPress={onBack}>
-        Back
-      </Text>
+      <AuthBackLink onPress={onBack} />
     </AuthFrame>
   );
 }
@@ -1627,7 +1840,7 @@ function ReviewScreen({
       />
       {message ? <Text style={styles.authError}>{message}</Text> : null}
       <View style={styles.infoStrip}>
-        <Text style={styles.infoIcon}>✓</Text>
+        <AppIcon name="checkmark-circle" size={18} color={colors.action} />
         <Text style={styles.infoText}>
           I confirm that all information provided is true and correct.
         </Text>
@@ -1637,9 +1850,7 @@ function ReviewScreen({
         onPress={onSubmit}
         disabled={loading}
       />
-      <Text style={styles.authLink} onPress={onBack}>
-        Back
-      </Text>
+      <AuthBackLink onPress={onBack} />
     </AuthFrame>
   );
 }
@@ -1676,7 +1887,7 @@ function SubmittedScreen({
 }) {
   return (
     <AuthFrame>
-      <View style={styles.successIcon}>✓</View>
+      <View style={styles.successIcon}><AppIcon name="checkmark" size={46} color={colors.action} /></View>
       <Text style={styles.successTitle}>Registration Submitted!</Text>
       <Text style={styles.successText}>
         Thank you for registering as a Lift Technician. Your application has
@@ -1716,7 +1927,7 @@ function VerificationScreen({
         We are verifying your submitted documents.
       </Text>
       <View style={styles.infoStrip}>
-        <Text style={styles.infoIcon}>◷</Text>
+        <AppIcon name="time-outline" size={18} color={colors.info} />
         <Text style={styles.infoText}>
           Verification in progress. You will be notified when the review is
           completed.
@@ -1724,7 +1935,7 @@ function VerificationScreen({
       </View>
       {application?.documents?.map((document) => (
         <View key={document.id} style={styles.documentRow}>
-          <Text style={styles.documentIcon}>▣</Text>
+          <View style={styles.documentIcon}><AppIcon name="document-text-outline" size={17} color={colors.info} /></View>
           <View style={styles.documentCopy}>
             <Text style={styles.documentTitle}>
               {document.documentType.replace(/_/g, " ")}
@@ -1752,7 +1963,7 @@ function ApprovedScreen({
 }) {
   return (
     <AuthFrame>
-      <View style={styles.successIcon}>✓</View>
+      <View style={styles.successIcon}><AppIcon name="checkmark" size={46} color={colors.action} /></View>
       <Text style={styles.successTitle}>You're Approved!</Text>
       <Text style={styles.successText}>
         Welcome to Valor Lift Services. Your documents have been verified and
@@ -1810,11 +2021,21 @@ function AuthSelect({
         <Text style={value ? styles.fieldValue : styles.fieldPlaceholder}>
           {value || `Select ${inputLabel.toLowerCase()}`}
         </Text>
-        <Text style={styles.selectChevron}>⌄</Text>
+        <ChevronIcon />
       </Pressable>
     </View>
   );
 }
+
+function AuthBackLink({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable style={styles.authBackLink} onPress={onPress}>
+      <AppIcon name="chevron-back" size={18} color={colors.info} />
+      <Text style={styles.authLink}>Back</Text>
+    </Pressable>
+  );
+}
+
 function AuthButton({
   title,
   onPress,
@@ -1843,13 +2064,9 @@ function AuthButton({
       >
         {title}
       </Text>
-      <Text
-        style={
-          secondary ? styles.authButtonSecondaryText : styles.authButtonText
-        }
-      >
-        {secondary ? "" : "→"}
-      </Text>
+      {!secondary ? (
+        <AppIcon name="arrow-forward" size={16} color={colors.surface} />
+      ) : null}
     </Pressable>
   );
 }
@@ -1913,22 +2130,35 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function Header({ screen, onBack }: { screen: Screen; onBack: () => void }) {
-  const detail =
-    screen === "jobDetail" ||
-    screen === "visitDetail" ||
-    (screen.startsWith("profile") && screen !== "profile");
+  const detail = needsHeader(screen);
   return (
     <View style={styles.header}>
       <Pressable
         disabled={!detail}
         onPress={onBack}
-        style={styles.headerButton}
+        style={[styles.headerButton, detail && styles.headerIconButton]}
       >
-        <Text style={styles.link}>{detail ? "Back" : ""}</Text>
+        {detail ? (
+          <AppIcon name="chevron-back" size={24} color={colors.primary} />
+        ) : null}
       </Pressable>
       <Text style={styles.logo}>VALOR</Text>
       <View style={styles.headerButton} />
     </View>
+  );
+}
+
+function needsHeader(screen: Screen) {
+  return (
+    screen === "jobDetail" ||
+    screen === "visitDetail" ||
+    screen === "emergencyRequests" ||
+    screen === "support" ||
+    screen === "scanQr" ||
+    screen === "requestParts" ||
+    screen === "reportIssue" ||
+    screen === "safety" ||
+    (screen.startsWith("profile") && screen !== "profile")
   );
 }
 
@@ -1946,6 +2176,22 @@ function Banner({
   );
 }
 
+function AppIcon({
+  name,
+  size = 18,
+  color = colors.primary,
+}: {
+  name: IoniconName;
+  size?: number;
+  color?: string;
+}) {
+  return <Ionicons name={name} size={size} color={color} />;
+}
+
+function ChevronIcon() {
+  return <AppIcon name="chevron-forward" size={18} color={colors.muted} />;
+}
+
 function Dashboard({
   dashboard,
   jobs,
@@ -1957,6 +2203,14 @@ function Dashboard({
   onStartJob,
   onNotifications,
   onProfile,
+  onMenu,
+  onEmergency,
+  onSupport,
+  onScanQr,
+  onRequestParts,
+  onHistory,
+  onReportIssue,
+  onSafety,
 }: {
   dashboard: TechnicianDashboard | null;
   jobs: RequestView[];
@@ -1968,22 +2222,43 @@ function Dashboard({
   onStartJob: (job: RequestView) => void;
   onNotifications: () => void;
   onProfile: () => void;
+  onMenu: () => void;
+  onEmergency: () => void;
+  onSupport: () => void;
+  onScanQr: () => void;
+  onRequestParts: () => void;
+  onHistory: () => void;
+  onReportIssue: () => void;
+  onSafety: () => void;
 }) {
   const name =
     dashboard?.profile.email?.split("@")[0] ||
     dashboard?.profile.employeeId ||
     "Technician";
+  const todayJobs = todayOnly(jobs).slice(0, 3);
+  const alertCount = unreadCountFromJobs(jobs, dashboard);
   return (
     <ScrollView contentContainerStyle={styles.homeContent}>
       <View style={styles.homeTop}>
-        <Text style={styles.homeMenu}>☰</Text>
-        <Text style={styles.logo}>VALOR</Text>
+        <Pressable onPress={onMenu} style={styles.iconButton}>
+          <AppIcon name="menu-outline" size={24} color={colors.primary} />
+        </Pressable>
+        <View style={styles.valorMark}>
+          <Text style={styles.valorV}>V</Text>
+          <View>
+            <Text style={styles.logo}>VALOR</Text>
+            <Text style={styles.logoSub}>LIFT SERVICES</Text>
+          </View>
+        </View>
         <View style={styles.homeTopActions}>
-          <Pressable onPress={onNotifications}>
-            <Text style={styles.homeIcon}>♧</Text>
+          <Pressable onPress={onNotifications} style={styles.iconButton}>
+            <AppIcon name="notifications-outline" size={19} color={colors.primary} />
+            {alertCount > 0 ? (
+              <Text style={styles.iconBadge}>{Math.min(alertCount, 9)}</Text>
+            ) : null}
           </Pressable>
-          <Pressable onPress={onProfile}>
-            <Text style={styles.homeAvatar}>👤</Text>
+          <Pressable onPress={onProfile} style={styles.avatarCircle}>
+            <AppIcon name="person" size={18} color={colors.primary} />
           </Pressable>
         </View>
       </View>
@@ -2003,63 +2278,73 @@ function Dashboard({
           </View>
         </View>
         <TechnicianIllustration />
+        <View style={styles.heroServiceBox}>
+          <Text style={styles.heroServiceText}>
+            Service{"\n"}Today{"\n"}Safer{"\n"}Tomorrow
+          </Text>
+        </View>
       </View>
       <View style={styles.homeMetrics}>
-        <HomeMetric
-          icon="▣"
-          label="Assigned\nJobs"
-          value={dashboard?.assignedJobs}
-          tone="blue"
-        />
-        <HomeMetric
-          icon="◌"
-          label="In\nProgress"
-          value={dashboard?.inProgressJobs}
-          tone="amber"
-        />
-        <HomeMetric
-          icon="◷"
-          label="Pending\nJobs"
-          value={dashboard?.pendingJobs}
-          tone="red"
-        />
-        <HomeMetric
-          icon="✓"
-          label="Completed\nThis Month"
-          value={dashboard?.completedJobs}
-          tone="green"
-        />
+        <HomeMetric icon="briefcase" label="Assigned\nJobs" value={dashboard?.assignedJobs} tone="blue" />
+        <HomeMetric icon="sync" label="In\nProgress" value={dashboard?.inProgressJobs} tone="amber" />
+        <HomeMetric icon="time-outline" label="Pending\nJobs" value={dashboard?.pendingJobs} tone="red" />
+        <HomeMetric icon="checkmark-circle" label="Completed\nThis Month" value={dashboard?.completedThisQuarter ?? dashboard?.completedJobs} tone="green" />
       </View>
       <View style={styles.homeSectionHeader}>
         <Text style={styles.homeSectionTitle}>Today's Jobs</Text>
-        <Pressable onPress={onJobs}>
-          <Text style={styles.homeViewAll}>View All ›</Text>
+        <Pressable style={styles.homeViewAllButton} onPress={onJobs}>
+          <Text style={styles.homeViewAll}>View All</Text>
+          <AppIcon name="chevron-forward" size={13} color={colors.info} />
         </Pressable>
       </View>
       {loading && !dashboard ? (
         <ActivityIndicator color={colors.info} />
       ) : (
-        jobs
-          .slice(0, 3)
-          .map((job) => (
-            <HomeJobRow key={job.id} job={job} onPress={() => onJob(job)} />
-          ))
+        todayJobs.map((job) => (
+          <HomeJobRow key={job.id} job={job} onPress={() => onJob(job)} />
+        ))
       )}
-      {jobs.length === 0 ? <Empty text="No jobs assigned for today." /> : null}
-      <Pressable style={styles.safetyCard} onPress={onRefresh}>
-        <View style={styles.safetyIcon}>✓</View>
+      {todayJobs.length === 0 ? <Empty text="No jobs assigned for today." /> : null}
+      <View style={styles.homeDualRow}>
+        <Pressable style={styles.emergencyCard} onPress={onEmergency}>
+          <AppIcon name="alert-circle" size={24} color={colors.danger} />
+          <View style={styles.dualCopy}>
+            <Text style={styles.dualTitle}>Emergency{"\n"}Requests</Text>
+            <Text style={styles.dualText}>{dashboard?.emergencyJobs ?? 0} request received</Text>
+          </View>
+          <ChevronIcon />
+        </Pressable>
+        <Pressable style={styles.supportCard} onPress={onSupport}>
+          <AppIcon name="headset" size={24} color={colors.info} />
+          <View style={styles.dualCopy}>
+            <Text style={styles.dualTitle}>Support</Text>
+            <Text style={styles.dualText}>Contact supervisor{"\n"}for assistance</Text>
+          </View>
+          <ChevronIcon />
+        </Pressable>
+      </View>
+      <Text style={styles.homeSectionTitle}>Quick Actions</Text>
+      <View style={styles.quickGrid}>
+        <QuickAction icon="qr-code" label="Scan QR" tone="blue" onPress={onScanQr} />
+        <QuickAction icon="cube" label="Request Parts" tone="red" onPress={onRequestParts} />
+        <QuickAction icon="document-text" label="Service History" tone="green" onPress={onHistory} />
+        <QuickAction icon="warning" label="Report Issue" tone="amber" onPress={onReportIssue} />
+      </View>
+      <Pressable style={styles.safetyCard} onPress={onSafety}>
+        <View style={styles.safetyIcon}>
+          <AppIcon name="shield-checkmark" size={18} color={colors.action} />
+        </View>
         <View style={styles.safetyCopy}>
           <Text style={styles.safetyTitle}>Safety First</Text>
           <Text style={styles.safetyText}>
             Follow safety guidelines and use proper equipment at all times.
           </Text>
         </View>
-        <Text style={styles.chevron}>›</Text>
+        <ChevronIcon />
       </Pressable>
     </ScrollView>
   );
 }
-
 function Jobs({
   items,
   filter,
@@ -2075,19 +2360,40 @@ function Jobs({
   onJob: (job: RequestView) => void;
   onStartJob: (job: RequestView) => void;
 }) {
+  const [dateFilter, setDateFilter] = useState(0);
+  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [month, setMonth] = useState(String(new Date().getMonth() + 1).padStart(2, "0"));
+  const dateFiltered = filterJobsByDate(items, DATE_FILTERS[dateFilter].key, year, month);
   return (
     <View style={styles.contentFill}>
-      <Text style={styles.jobsTitle}>Assigned Jobs</Text>
+      <Text style={styles.jobsTitle}>Jobs</Text>
       <View style={styles.datePicker}>
-        <Text style={styles.dateIcon}>▣</Text>
-        <Text style={styles.dateText}>
-          {new Date().toLocaleDateString(undefined, {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          })}
-        </Text>
-        <Text style={styles.chevron}>⌄</Text>
+        <AppIcon name="calendar-outline" size={15} color={colors.info} />
+        <Text style={styles.dateText}>{DATE_FILTERS[dateFilter].label}</Text>
+        <ChevronIcon />
+      </View>
+      <FilterBar
+        labels={DATE_FILTERS.map((item) => item.label)}
+        active={dateFilter}
+        onChange={setDateFilter}
+      />
+      <View style={styles.subFilterRow}>
+        <TextInput
+          style={styles.subFilterInput}
+          value={year}
+          onChangeText={setYear}
+          keyboardType="number-pad"
+          placeholder="Year"
+          placeholderTextColor={colors.muted}
+        />
+        <TextInput
+          style={styles.subFilterInput}
+          value={month}
+          onChangeText={setMonth}
+          keyboardType="number-pad"
+          placeholder="Month"
+          placeholderTextColor={colors.muted}
+        />
       </View>
       <FilterBar
         labels={JOB_FILTERS.map((item) => item.label)}
@@ -2098,7 +2404,7 @@ function Jobs({
         <ActivityIndicator color={colors.info} />
       ) : (
         <FlatList
-          data={items}
+          data={dateFiltered}
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => (
             <AssignedJobCard
@@ -2108,12 +2414,12 @@ function Jobs({
             />
           )}
           ListEmptyComponent={<Empty text="No jobs for this filter." />}
+          contentContainerStyle={styles.listContent}
         />
       )}
     </View>
   );
 }
-
 function History({
   items,
   filter,
@@ -2132,19 +2438,17 @@ function History({
   }, []);
   return (
     <View style={styles.contentFill}>
-      <View style={styles.pageHeading}>
+      <View style={styles.screenTopRow}>
         <View>
           <Text style={styles.jobsTitle}>Job History</Text>
-          <Text style={styles.settingsSubtitle}>
-            Completed, cancelled, and past service jobs.
-          </Text>
+          <Text style={styles.settingsSubtitle}>View all your completed, cancelled and past jobs.</Text>
         </View>
-        <Pressable style={styles.refreshButton}>
+        <Pressable style={styles.filterChipButton}>
           <Text style={styles.refreshText}>Filter</Text>
         </Pressable>
       </View>
-      <FilterBar
-        labels={HISTORY_FILTERS.map((item) => item.label)}
+      <SegmentedTabs
+        labels={["All", "Completed", "Cancelled", "Emergency"]}
         active={filter}
         onChange={onFilter}
       />
@@ -2152,41 +2456,12 @@ function History({
         data={items}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <Pressable style={styles.historyCard} onPress={() => onJob(item)}>
-            <View style={styles.historyIcon}>
-              <Text style={styles.historyIconText}>
-                {item.priority === "EMERGENCY" ? "!" : "✓"}
-              </Text>
-            </View>
-            <View style={styles.historyCopy}>
-              <View style={styles.rowBetween}>
-                <Text style={styles.cardTitle}>{label(item.serviceType)}</Text>
-                <Badge
-                  text={label(item.status)}
-                  tone={item.status === "CANCELLED" ? "danger" : "info"}
-                />
-              </View>
-              <Text style={styles.muted}>{requestSummary(item)}</Text>
-              <Text style={styles.historyMeta}>
-                {item.preferredVisitDate || "Date pending"} ·{" "}
-                {item.preferredTimeSlot || "Time pending"}
-              </Text>
-              <Text style={styles.historyMeta}>
-                {item.liftId
-                  ? `Lift ${item.liftId}`
-                  : "Lift details unavailable"}{" "}
-                · View details ›
-              </Text>
-            </View>
-          </Pressable>
-        )}
+        renderItem={({ item }) => <HistoryJobRow job={item} onPress={() => onJob(item)} />}
         ListEmptyComponent={<Empty text="No history for this filter." />}
       />
     </View>
   );
 }
-
 function JobDetailScreen({
   detail,
   tracking,
@@ -2234,168 +2509,23 @@ function JobDetailScreen({
   ) => Promise<void>;
   onOpenMaps: () => Promise<void>;
 }) {
+  const request = detail.request;
+  const info = jobInfo(request);
   const checklistDone = !checklist || checklist.status === "COMPLETED";
   const otpDone = completionOtp?.status === "VERIFIED";
-  const actions = allowedTransitions(detail.request.status).filter(
-    (status) =>
-      status !== "COMPLETED" || (!!detail.report && checklistDone && otpDone),
-  );
+  const hasDocuments = attachments.length > 0;
   const openAttachment = async (attachment: AttachmentView) => {
-    const url = technicianApi.attachmentUrl(detail.request.id, attachment.id);
+    const url = technicianApi.attachmentUrl(request.id, attachment.id);
     const supported = await Linking.canOpenURL(url);
     if (supported) await Linking.openURL(url);
   };
-  return (
-    <ScrollView contentContainerStyle={styles.detailContent}>
-      <View style={styles.detailHeading}>
-        <View>
-          <Text style={styles.jobsTitle}>Job Details</Text>
-          <Text style={styles.detailId}>
-            Job ID: {detail.request.serviceId || `SR-${detail.request.id}`}
-          </Text>
-        </View>
-        <Badge
-          text={label(detail.request.status)}
-          tone={detail.request.priority === "EMERGENCY" ? "danger" : "info"}
-        />
-      </View>
-      <View style={styles.detailIdentity}>
-        <LiftIllustration
-          tone={detail.request.priority === "EMERGENCY" ? "red" : "blue"}
-        />
-        <View style={styles.detailIdentityCopy}>
-          <Text style={styles.detailPlace}>
-            {requestSummary(detail.request)}
-          </Text>
-          <Text style={styles.detailMeta}>
-            {label(detail.request.serviceType)} ·{" "}
-            {label(detail.request.priority)}
-          </Text>
-          <Text style={styles.detailMeta}>
-            {detail.request.liftId
-              ? `Lift ${detail.request.liftId}`
-              : "Lift details unavailable"}
-          </Text>
-        </View>
-      </View>
-      <DetailRow
-        icon="▣"
-        label="Service Type"
-        value={label(detail.request.serviceType)}
-      />
-      <View style={styles.detailTwoCol}>
-        <DetailRow
-          icon="▦"
-          label="Schedule Date"
-          value={detail.request.preferredVisitDate}
-        />
-        <DetailRow
-          icon="◷"
-          label="Time"
-          value={detail.request.preferredTimeSlot}
-        />
-      </View>
-      {detail.request.customerProfileId ? (
-        <DetailRow
-          icon="●"
-          label="Customer"
-          value={`Customer ${detail.request.customerProfileId}`}
-        />
-      ) : null}
-      {detail.request.description ? (
-        <DetailRow
-          icon="!"
-          label="Issue Reported"
-          value={detail.request.description}
-          tone="warning"
-        />
-      ) : null}
-      {detail.request.customerRemarks ? (
-        <DetailRow
-          icon="▤"
-          label="Special Instructions"
-          value={detail.request.customerRemarks}
-        />
-      ) : null}
-      {TRACKABLE.includes(detail.request.status) ? (
-        <JourneyPanel
-          status={detail.request.status}
-          location={jobLocation}
-          onOpenMaps={onOpenMaps}
-        />
-      ) : null}
-      {tracking.active || tracking.error ? (
-        <Info
-          title="Live tracking"
-          rows={[
-            tracking.active
-              ? "Location sharing active"
-              : "Location sharing inactive",
-            tracking.error,
-          ]}
-        />
-      ) : null}
-      <ChecklistPanel checklist={checklist} onSave={onChecklistSave} />
-      {detail.request.status === "REACHED_SITE" ||
-      detail.request.status === "DIAGNOSIS" ||
-      detail.request.status === "REPAIR_IN_PROGRESS" ||
-      detail.request.status === "WAITING_FOR_PARTS" ||
-      detail.request.status === "TESTING" ? (
-        <ArrivalOtpPanel
-          state={arrivalOtp}
-          onRequest={onRequestArrivalOtp}
-          onVerify={onVerifyArrivalOtp}
-        />
-      ) : null}
-      {detail.request.status === "TESTING" ? (
-        <CompletionOtpPanel
-          state={completionOtp}
-          onRequest={onRequestOtp}
-          onVerify={onVerifyOtp}
-        />
-      ) : null}
-      {servicePayment?.cashOtp ||
-      servicePayment?.payment?.providerReference === "CASH" ? (
-        <CashPaymentPanel payment={servicePayment} onVerify={onVerifyCash} />
-      ) : null}
-      <Text style={styles.detailSectionTitle}>Next action</Text>
-      {detail.request.status === "TESTING" && !checklistDone ? (
-        <Text style={styles.errorText}>
-          Complete all required checklist items before completing this job.
-        </Text>
-      ) : null}
-      {detail.request.status === "TESTING" && !otpDone ? (
-        <Text style={styles.errorText}>
-          Verify the customer completion OTP before completing this job.
-        </Text>
-      ) : null}
-      {actions.map((status) => (
-        <Pressable
-          key={status}
-          style={[
-            styles.primaryButton,
-            status === "CANCELLED" && styles.dangerButton,
-          ]}
-          onPress={() => onTransition(status)}
-        >
-          <Text style={styles.primaryText}>{label(status)}</Text>
-        </Pressable>
-      ))}
-      {detail.request.status === "TESTING" ? (
-        <Pressable style={styles.primaryButton} onPress={onReport}>
-          <Text style={styles.primaryText}>Save service report</Text>
-        </Pressable>
-      ) : null}
+  const documents = hasDocuments ? (
+    <View style={styles.card}>
       <SectionTitle title="Documents" action="Add" onAction={onAttach} />
       {attachments.map((item) => (
         <View key={item.id} style={styles.row}>
-          <Pressable
-            style={styles.rowText}
-            onPress={() => openAttachment(item)}
-          >
-            <Text style={styles.rowText}>
-              {item.originalFilename} ({Math.round(item.fileSize / 1024)} KB)
-            </Text>
+          <Pressable style={styles.rowText} onPress={() => openAttachment(item)}>
+            <Text style={styles.rowText}>{item.originalFilename}</Text>
             <Text style={styles.muted}>{item.contentType}</Text>
           </Pressable>
           <Pressable onPress={() => onDeleteAttachment(item.id)}>
@@ -2403,11 +2533,143 @@ function JobDetailScreen({
           </Pressable>
         </View>
       ))}
-      {attachments.length === 0 ? <Empty text="No attachments yet." /> : null}
+    </View>
+  ) : null;
+
+  if (request.status === "COMPLETED") {
+    return (
+      <ScrollView contentContainerStyle={styles.detailContent}>
+        <CompletedJobView
+          detail={detail}
+          info={info}
+          servicePayment={servicePayment}
+          onOpenDetails={() => undefined}
+        />
+        {servicePayment?.cashOtp || servicePayment?.payment?.providerReference === "CASH" ? (
+          <CashPaymentPanel payment={servicePayment} onVerify={onVerifyCash} />
+        ) : null}
+      </ScrollView>
+    );
+  }
+
+  if (request.status === "ON_THE_WAY") {
+    return (
+      <ScrollView contentContainerStyle={styles.detailContent}>
+        <StatusHeader
+          title="On The Way"
+          subtitle="You are on your way to the job location"
+          request={request}
+          callPhone={info.phone}
+        />
+        <ProgressSteps status={request.status} />
+        <RouteMapCard request={request} info={info} location={jobLocation} onOpenMaps={onOpenMaps} />
+        <BuildingSummaryCard request={request} info={info} compact />
+        <View style={styles.routeStatsGrid}>
+          <RouteStat label="Distance" value={jobLocation?.route?.distanceMeters ? `${(jobLocation.route.distanceMeters / 1000).toFixed(1)} km` : "2.8 km"} />
+          <RouteStat label="Estimated Time" value={jobLocation?.route?.durationSeconds ? `${Math.max(1, Math.round(jobLocation.route.durationSeconds / 60))} min` : "12 min"} />
+          <RouteStat label="Scheduled Time" value={request.preferredTimeSlot || "Time pending"} />
+        </View>
+        <Pressable style={styles.greenButton} onPress={onOpenMaps}>
+          <Text style={styles.primaryText}>Open in Maps</Text>
+        </Pressable>
+        <View style={styles.detailTwoCol}>
+          <Pressable style={styles.outlineButton} onPress={() => callPhone(info.phone)}>
+            <Text style={styles.outlineText}>Call Customer</Text>
+          </Pressable>
+          <Pressable style={styles.outlineButton} onPress={() => messagePhone(info.phone)}>
+            <Text style={styles.outlineText}>Message</Text>
+          </Pressable>
+        </View>
+        <Info title="Job Instructions" rows={[info.instructions || "Carry standard service kit. Check door sensors and lubrication."]} />
+        <Pressable style={styles.primaryButton} onPress={() => onTransition("REACHED_SITE")}>
+          <Text style={styles.primaryText}>Slide to Reached Location</Text>
+        </Pressable>
+      </ScrollView>
+    );
+  }
+
+  if (["REACHED_SITE", "DIAGNOSIS", "REPAIR_IN_PROGRESS", "WAITING_FOR_PARTS", "TESTING"].includes(request.status)) {
+    return (
+      <ScrollView contentContainerStyle={styles.detailContent}>
+        <StatusHeader
+          title="Service In Progress"
+          subtitle="Our technician is working on your service request."
+          request={request}
+          callPhone={info.phone}
+        />
+        <ProgressSteps status={request.status} />
+        <View style={styles.progressNotice}>
+          <Text style={styles.progressNoticeTitle}>Service in Progress</Text>
+          <Text style={styles.progressNoticeText}>Technician is working on the issue. We will notify you once it is completed.</Text>
+        </View>
+        <CustomerContactCard info={info} />
+        <LocationNameCard info={info} onOpenMaps={onOpenMaps} />
+        <RouteMapCard request={request} info={info} location={jobLocation} onOpenMaps={onOpenMaps} curved />
+        <BuildingSummaryCard request={request} info={info} compact />
+        <Info title="Job Instructions" rows={[info.instructions || "Check door sensors and lubrication. Carry standard service kit."]} />
+        <ChecklistPanel checklist={checklist} onSave={onChecklistSave} />
+        {request.status === "REACHED_SITE" || request.status === "DIAGNOSIS" ? (
+          <ArrivalOtpPanel state={arrivalOtp} onRequest={onRequestArrivalOtp} onVerify={onVerifyArrivalOtp} />
+        ) : null}
+        {request.status === "TESTING" ? (
+          <CompletionOtpPanel state={completionOtp} onRequest={onRequestOtp} onVerify={onVerifyOtp} />
+        ) : null}
+        {request.status === "TESTING" && !checklistDone ? (
+          <Text style={styles.errorText}>Complete all required checklist items before completing this job.</Text>
+        ) : null}
+        {request.status === "TESTING" && !otpDone ? (
+          <Text style={styles.errorText}>Verify the customer completion OTP before completing this job.</Text>
+        ) : null}
+        <Pressable
+          style={[styles.primaryButton, request.status === "TESTING" && (!checklistDone || !otpDone) && styles.disabled]}
+          disabled={request.status === "TESTING" && (!checklistDone || !otpDone)}
+          onPress={() => onTransition(request.status === "TESTING" ? "COMPLETED" : "TESTING")}
+        >
+          <Text style={styles.primaryText}>Completed Job</Text>
+        </Pressable>
+        <Pressable style={styles.outlineButton} onPress={() => onTransition("WAITING_FOR_PARTS")}>
+          <Text style={styles.outlineText}>Request Revisit</Text>
+        </Pressable>
+        <Pressable style={styles.outlineButton} onPress={onReport}>
+          <Text style={styles.outlineText}>View Service Details</Text>
+        </Pressable>
+      </ScrollView>
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={styles.detailContent}>
+      <StatusHeader
+        title="Job Details"
+        subtitle="Complete the job details and keep people moving safely."
+        request={request}
+        callPhone={info.phone}
+      />
+      <BuildingSummaryCard request={request} info={info} />
+      <DetailInfoGrid request={request} info={info} />
+      <LocationMapPreview info={info} onOpenMaps={onOpenMaps} />
+      {request.description ? <Info title="Issue Reported" rows={[request.description]} /> : null}
+      {info.instructions ? <Info title="Special Instructions" rows={[info.instructions]} /> : null}
+      <Pressable
+        style={styles.primaryButton}
+        onPress={() => onTransition(request.status === "ASSIGNED" ? "ACCEPTED" : "ON_THE_WAY")}
+      >
+        <Text style={styles.primaryText}>Start Job</Text>
+      </Pressable>
+      <View style={styles.detailTwoCol}>
+        <Pressable style={styles.outlineButton} onPress={onOpenMaps}>
+          <Text style={styles.outlineText}>Get Directions</Text>
+        </Pressable>
+        {hasDocuments ? (
+          <Pressable style={styles.outlineButton} onPress={() => openAttachment(attachments[0])}>
+            <Text style={styles.outlineText}>View Documents</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      {documents}
     </ScrollView>
   );
 }
-
 function JourneyPanel({
   status,
   location,
@@ -2451,7 +2713,7 @@ function JourneyPanel({
               ]}
             >
               <Text style={styles.journeyDotText}>
-                {index <= active ? "✓" : "·"}
+                {index <= active ? "OK" : ""}
               </Text>
             </View>
             <Text style={styles.journeyLabel}>{label(step)}</Text>
@@ -2461,19 +2723,19 @@ function JourneyPanel({
       {location?.route?.available ? (
         <View style={styles.routeStats}>
           <Text style={styles.routeStat}>
-            ⌖{" "}
+            Distance{" "}
             {location.route.distanceMeters
               ? `${(location.route.distanceMeters / 1000).toFixed(1)} km`
               : "Route ready"}
           </Text>
           <Text style={styles.routeStat}>
-            ◷{" "}
+            ETA{" "}
             {location.route.durationSeconds
               ? `${Math.max(1, Math.round(location.route.durationSeconds / 60))} min`
               : "ETA pending"}
           </Text>
           <Text style={styles.routeStat}>
-            ●{" "}
+            Arrive{" "}
             {location.eta?.etaAt
               ? new Date(location.eta.etaAt).toLocaleTimeString([], {
                   hour: "2-digit",
@@ -2495,6 +2757,286 @@ function JourneyPanel({
         </Pressable>
       ) : null}
     </View>
+  );
+}
+
+function StatusHeader({
+  title,
+  subtitle,
+  request,
+  callPhone: phone,
+}: {
+  title: string;
+  subtitle: string;
+  request: RequestView;
+  callPhone?: string;
+}) {
+  return (
+    <View style={styles.flowHeader}>
+      <View>
+        <Text style={styles.jobsTitle}>{title}</Text>
+        <Text style={styles.settingsSubtitle}>{subtitle}</Text>
+      </View>
+      <View style={styles.flowHeaderRight}>
+        <Badge text={label(request.status)} tone="info" />
+        <Text style={styles.detailId}>Job ID: {request.serviceId || `SR-${request.id}`}</Text>
+        {phone ? (
+          <Pressable style={styles.callCircle} onPress={() => callPhone(phone)}>
+            <Text style={styles.callCircleText}>Call</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function ProgressSteps({ status }: { status: RequestStatus }) {
+  const steps: Array<{ status: RequestStatus; label: string }> = [
+    { status: "ASSIGNED", label: "Assigned" },
+    { status: "ON_THE_WAY", label: "On The Way" },
+    { status: "REPAIR_IN_PROGRESS", label: "In Progress" },
+    { status: "COMPLETED", label: "Completed" },
+  ];
+  const active =
+    status === "ASSIGNED" || status === "ACCEPTED"
+      ? 0
+      : status === "ON_THE_WAY"
+        ? 1
+        : status === "COMPLETED"
+          ? 3
+          : 2;
+  return (
+    <View style={styles.stepTracker}>
+      {steps.map((step, index) => (
+        <View key={step.label} style={styles.flowStepItem}>
+          <View style={[styles.stepBubble, index <= active && styles.stepBubbleActive]}>
+            <Text style={styles.stepBubbleText}>{index <= active ? "✓" : ""}</Text>
+          </View>
+          <Text style={[styles.flowStepText, index === active && styles.flowStepTextActive]}>
+            {step.label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function BuildingSummaryCard({
+  request,
+  info,
+  compact,
+}: {
+  request: RequestView;
+  info: ReturnType<typeof jobInfo>;
+  compact?: boolean;
+}) {
+  return (
+    <View style={[styles.buildingCard, compact && styles.buildingCardCompact]}>
+      <View style={styles.buildingImage}>
+        <AppIcon name="business-outline" size={34} color={colors.primary} />
+      </View>
+      <View style={styles.buildingCopy}>
+        <View style={styles.rowBetween}>
+          <Text style={styles.buildingTitle}>{info.building}</Text>
+          <Badge text={label(request.serviceType)} tone={request.priority === "EMERGENCY" ? "danger" : "info"} />
+        </View>
+        <Text style={styles.assignedMeta}>{info.location}</Text>
+        <Text style={styles.assignedMeta}>{info.lift}</Text>
+        <Text style={styles.assignedMeta}>{info.persons} | Schindler</Text>
+      </View>
+      <ChevronIcon />
+    </View>
+  );
+}
+
+function DetailInfoGrid({
+  request,
+  info,
+}: {
+  request: RequestView;
+  info: ReturnType<typeof jobInfo>;
+}) {
+  return (
+    <>
+      <DetailRow icon="construct-outline" label="Service Type" value={label(request.serviceType)} />
+      <View style={styles.detailTwoCol}>
+        <DetailRow icon="calendar-outline" label="Schedule Date" value={request.preferredVisitDate || "Date pending"} />
+        <DetailRow icon="time-outline" label="Time" value={request.preferredTimeSlot || "Time pending"} />
+      </View>
+      <DetailRow icon="person-outline" label="Customer Contact" value={info.customer} />
+    </>
+  );
+}
+
+function LocationMapPreview({
+  info,
+  onOpenMaps,
+}: {
+  info: ReturnType<typeof jobInfo>;
+  onOpenMaps: () => Promise<void>;
+}) {
+  return (
+    <View style={styles.locationCard}>
+      <View style={styles.rowBetween}>
+        <View style={styles.homeJobCopy}>
+          <Text style={styles.detailRowLabel}>Location</Text>
+          <Text style={styles.detailRowValue}>{info.location}</Text>
+        </View>
+        <ChevronIcon />
+      </View>
+      <Pressable style={styles.fakeMapSmall} onPress={onOpenMaps}>
+        <View style={styles.mapLine} />
+        <Text style={styles.mapPin}>●</Text>
+        <Text style={styles.mapLabel}>{info.building}</Text>
+        <Text style={styles.mapOpen}>Open in Maps</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function RouteMapCard({
+  request,
+  info,
+  location,
+  onOpenMaps,
+  curved,
+}: {
+  request: RequestView;
+  info: ReturnType<typeof jobInfo>;
+  location: LocationView | null;
+  onOpenMaps: () => Promise<void>;
+  curved?: boolean;
+}) {
+  return (
+    <Pressable style={styles.routeMap} onPress={onOpenMaps}>
+      <Text style={styles.mapChipLeft}>Your Location</Text>
+      <Text style={styles.mapBlueDot}>●</Text>
+      <View style={[styles.routeLine, curved && styles.routeLineDotted]} />
+      <Text style={styles.mapRedPin}>●</Text>
+      <Text style={styles.mapChipRight}>{info.building}</Text>
+      <Text style={styles.mapCity}>{fieldText(request as Record<string, unknown>, ["area", "city"]) || "Banjara Hills"}</Text>
+      <Text style={styles.mapCorner}>◎</Text>
+    </Pressable>
+  );
+}
+
+function RouteStat({ label: statLabel, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.routeStatCard}>
+      <Text style={styles.routeStatValue}>{value}</Text>
+      <Text style={styles.routeStatLabel}>{statLabel}</Text>
+    </View>
+  );
+}
+
+function CustomerContactCard({ info }: { info: ReturnType<typeof jobInfo> }) {
+  return (
+    <View style={styles.contactCard}>
+      <View style={styles.profileAvatarSmall}>
+        <AppIcon name="person" size={22} color={colors.info} />
+      </View>
+      <View style={styles.homeJobCopy}>
+        <Text style={styles.detailRowLabel}>Customer</Text>
+        <Text style={styles.buildingTitle}>{info.customer}</Text>
+      </View>
+      <Pressable style={styles.callCircle} onPress={() => callPhone(info.phone)}>
+        <Text style={styles.callCircleText}>Call</Text>
+      </Pressable>
+      <Pressable style={styles.callCircle} onPress={() => messagePhone(info.phone)}>
+        <Text style={styles.callCircleText}>Msg</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function LocationNameCard({
+  info,
+  onOpenMaps,
+}: {
+  info: ReturnType<typeof jobInfo>;
+  onOpenMaps: () => Promise<void>;
+}) {
+  return (
+    <View style={styles.contactCard}>
+      <View style={styles.detailRowIcon}>
+        <AppIcon name="location-outline" size={16} color={colors.info} />
+      </View>
+      <View style={styles.homeJobCopy}>
+        <Text style={styles.buildingTitle}>{info.building}</Text>
+        <Text style={styles.assignedMeta}>{info.location}</Text>
+      </View>
+      <Pressable style={styles.viewButton} onPress={onOpenMaps}>
+        <Text style={styles.viewButtonText}>View on Map</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function CompletedJobView({
+  detail,
+  info,
+  servicePayment,
+  onOpenDetails,
+}: {
+  detail: JobDetail;
+  info: ReturnType<typeof jobInfo>;
+  servicePayment: TechnicianServicePayment | null;
+  onOpenDetails: () => void;
+}) {
+  return (
+    <>
+      <View style={styles.completedHero}>
+        <View style={styles.completedCheck}>
+          <AppIcon name="checkmark" size={46} color={colors.surface} />
+        </View>
+        <Text style={styles.completedTitle}>Service Completed!</Text>
+        <Text style={styles.settingsSubtitle}>
+          Your service request has been successfully completed.
+        </Text>
+      </View>
+      <View style={styles.card}>
+        <View style={styles.rowBetween}>
+          <View>
+            <Text style={styles.cardTitle}>{requestSummary(detail.request)}</Text>
+            <Text style={styles.assignedMeta}>{detail.request.serviceId || `SR-${detail.request.id}`}</Text>
+          </View>
+          <Badge text="Completed" tone="info" />
+        </View>
+        <Info
+          title={info.building}
+          rows={[
+            info.location,
+            detail.request.completedAt || detail.request.preferredVisitDate,
+            `Technician: ${detail.activeAssignment?.technicianProfileId || "Valor technician"}`,
+            detail.report?.completionNotes || "Issue resolved. Elevator is working fine now.",
+          ]}
+        />
+      </View>
+      {servicePayment?.payment ? (
+        <Pressable style={styles.primaryButton}>
+          <Text style={styles.primaryText}>Payment</Text>
+        </Pressable>
+      ) : null}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Rate Our Service</Text>
+        <Text style={styles.ratingStars}>★ ★ ★ ★ ★</Text>
+        <Text style={styles.successHint}>Excellent Service!</Text>
+        <TextInput
+          style={[styles.input, styles.textarea]}
+          placeholder="Add a comment (optional)"
+          placeholderTextColor={colors.muted}
+          multiline
+        />
+      </View>
+      <View style={styles.detailTwoCol}>
+        <Pressable style={styles.outlineButton} onPress={onOpenDetails}>
+          <Text style={styles.outlineText}>View Service Details</Text>
+        </Pressable>
+        <Pressable style={styles.primaryButton}>
+          <Text style={styles.primaryText}>Back to Home</Text>
+        </Pressable>
+      </View>
+    </>
   );
 }
 
@@ -2569,7 +3111,7 @@ function CashPaymentPanel({
     <View style={styles.cashPanel}>
       <Text style={styles.detailSectionTitle}>Cash payment</Text>
       <Text style={styles.muted}>
-        {payment.invoice?.invoiceNumber || "Service invoice"} ·{" "}
+        {payment.invoice?.invoiceNumber || "Service invoice"} -{" "}
         {payment.invoice?.totalAmount
           ? `${payment.invoice.currency || "INR"} ${payment.invoice.totalAmount}`
           : "Amount available in invoice"}
@@ -2858,121 +3400,71 @@ function notificationGroup(
   return "System";
 }
 
-function notificationIcon(item: NotificationView) {
+function notificationIcon(item: NotificationView): IoniconName {
   const group = notificationGroup(item);
   return group === "Emergency"
-    ? "!"
+    ? "alert-circle"
     : group === "Messages"
-      ? "..."
+      ? "chatbubble-ellipses"
       : group === "Jobs"
-        ? "✓"
-        : "i";
+        ? "checkmark-circle"
+        : "information-circle";
 }
-
 function Notifications({
   page,
   onRefresh,
   onRead,
   onMarkAll,
+  variant = "alerts",
 }: {
   page: PageView<NotificationView> | null;
   onRefresh: () => void;
   onRead: (id: number) => void;
   onMarkAll: () => Promise<void>;
+  variant?: "alerts" | "notifications";
 }) {
-  const [filter, setFilter] = useState<
-    "All" | "Jobs" | "Emergency" | "Messages"
-  >("All");
-  const items = (page?.items ?? []).filter(
-    (item) => filter === "All" || notificationGroup(item) === filter,
-  );
-  const unread = items.filter((item) => item.status !== "READ").length;
+  const filters = variant === "alerts" ? ["All", "Job Updates", "Emergency", "Messages"] : ["All", "Jobs", "System", "Announcements"];
+  const [filter, setFilter] = useState(filters[0]);
+  const allItems = page?.items ?? [];
+  const items = allItems.filter((item) => {
+    if (filter === "All") return true;
+    const group = notificationGroup(item);
+    if (filter === "Job Updates" || filter === "Jobs") return group === "Jobs";
+    if (filter === "Emergency") return group === "Emergency";
+    if (filter === "Messages") return group === "Messages";
+    if (filter === "System") return group === "System";
+    return group !== "Jobs" && group !== "Emergency" && group !== "Messages";
+  });
+  const grouped = variant === "notifications" ? groupNotificationItems(items) : [{title: "", items}];
   return (
     <View style={styles.contentFill}>
-      <View style={styles.pageHeading}>
+      <View style={styles.screenTopRow}>
         <View>
-          <Text style={styles.jobsTitle}>Alerts & Messages</Text>
-          <Text style={styles.settingsSubtitle}>
-            Stay updated with your jobs, requests and important notifications.
-          </Text>
+          <Text style={styles.jobsTitle}>{variant === "alerts" ? "Alerts & Messages" : "Notifications"}</Text>
+          <Text style={styles.settingsSubtitle}>Stay updated with your jobs, alerts and important information.</Text>
         </View>
-        <Pressable style={styles.refreshButton} onPress={onRefresh}>
-          <Text style={styles.refreshText}>Refresh</Text>
+        <Pressable style={styles.filterChipButton} onPress={variant === "alerts" ? onMarkAll : onRefresh}>
+          <Text style={styles.refreshText}>{variant === "alerts" ? "Mark All Read" : "Notification Settings"}</Text>
         </Pressable>
       </View>
-      <View style={styles.alertToolbar}>
-        <Text style={styles.alertCount}>{unread} unread</Text>
-        <Pressable onPress={onMarkAll}>
-          <Text style={styles.link}>Mark All as Read</Text>
-        </Pressable>
-      </View>
-      <FilterBar
-        labels={["All", "Jobs", "Emergency", "Messages"]}
-        active={["All", "Jobs", "Emergency", "Messages"].indexOf(filter)}
-        onChange={(index) =>
-          setFilter(
-            ["All", "Jobs", "Emergency", "Messages"][index] as typeof filter,
-          )
-        }
-      />
+      <SegmentedTabs labels={filters} active={Math.max(0, filters.indexOf(filter))} onChange={(index) => setFilter(filters[index])} />
       <FlatList
-        data={items}
-        keyExtractor={(item) => String(item.id)}
+        data={grouped}
+        keyExtractor={(group) => group.title || "alerts"}
         contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <Pressable
-            style={[
-              styles.notificationCard,
-              item.status !== "READ" && styles.notificationUnread,
-            ]}
-            onPress={() => onRead(item.id)}
-          >
-            <View
-              style={[
-                styles.notificationIcon,
-                notificationGroup(item) === "Emergency" &&
-                  styles.notificationIconDanger,
-              ]}
-            >
-              <Text style={styles.notificationIconText}>
-                {notificationIcon(item)}
-              </Text>
-            </View>
-            <View style={styles.notificationCopy}>
-              <View style={styles.rowBetween}>
-                <Text style={styles.notificationTitle}>{item.title}</Text>
-                <Text style={styles.notificationTime}>
-                  {item.createdAt
-                    ? new Date(item.createdAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    : ""}
-                </Text>
-              </View>
-              <Text style={styles.notificationMessage}>{item.message}</Text>
-              <Text style={styles.notificationMeta}>
-                {notificationGroup(item)} ·{" "}
-                {item.status === "READ" ? "Read" : "New"}
-              </Text>
-            </View>
-            {item.status !== "READ" ? <View style={styles.unreadDot} /> : null}
-          </Pressable>
+        renderItem={({ item: group }) => (
+          <View>
+            {group.title ? <Text style={styles.groupTitle}>{group.title}</Text> : null}
+            {group.items.map((item) => (
+              <AlertRow key={item.id} item={item} onPress={() => onRead(item.id)} />
+            ))}
+          </View>
         )}
-        ListEmptyComponent={
-          <Empty
-            text={
-              filter === "All"
-                ? "No notifications."
-                : `No ${filter.toLowerCase()} alerts.`
-            }
-          />
-        }
+        ListEmptyComponent={<Empty text="No notifications." />}
       />
     </View>
   );
 }
-
 function Profile({
   profile,
   dashboard,
@@ -2987,105 +3479,57 @@ function Profile({
   const name =
     profile?.email?.split("@")[0] || profile?.employeeId || "Technician";
   const row = (
-    icon: string,
+    icon: IoniconName,
     title: string,
     subtitle: string,
     target: Screen,
   ) => (
     <Pressable style={styles.settingsRow} onPress={() => onNavigate(target)}>
-      <Text style={styles.settingsIcon}>{icon}</Text>
+      <View style={styles.settingsIcon}>
+        <AppIcon name={icon} size={19} color={colors.info} />
+      </View>
       <View style={styles.settingsCopy}>
         <Text style={styles.settingsTitle}>{title}</Text>
         <Text style={styles.settingsSubtitle}>{subtitle}</Text>
       </View>
-      <Text style={styles.chevron}>›</Text>
+      <ChevronIcon />
     </Pressable>
   );
   return (
     <ScrollView contentContainerStyle={styles.profileContent}>
       <Text style={styles.jobsTitle}>Settings</Text>
-      <Text style={styles.settingsSubtitle}>
-        Manage your account and app preferences
-      </Text>
+      <Text style={styles.settingsSubtitle}>Manage your account and app preferences</Text>
       <View style={styles.profileCard}>
         <View style={styles.profileAvatar}>
-          <Text style={styles.profileAvatarText}>👤</Text>
+          <AppIcon name="person" size={30} color={colors.info} />
         </View>
         <View style={styles.profileCopy}>
           <Text style={styles.profileName}>{label(name)}</Text>
-          <Text style={styles.profileEmail}>
-            {profile?.email || "Technician account"}
-          </Text>
-          <Text style={styles.profilePhone}>
-            {profile?.phone || profile?.employeeId || "Valor Lift Services"}
-          </Text>
+          <Text style={styles.profileEmail}>{profile?.email || "Technician account"}</Text>
+          <Text style={styles.profilePhone}>{profile?.phone || profile?.employeeId || "Valor Lift Services"}</Text>
         </View>
-        <Pressable
-          style={styles.editPill}
-          onPress={() => onNavigate("profileDetails")}
-        >
+        <Pressable style={styles.editPill} onPress={() => onNavigate("profileDetails")}>
           <Text style={styles.editPillText}>Edit Profile</Text>
         </Pressable>
       </View>
       <Text style={styles.settingsSection}>Account Settings</Text>
-      {row(
-        "●",
-        "Personal Information",
-        "Manage your personal details",
-        "profileDetails",
-      )}
-      {row(
-        "⌁",
-        "Change Password",
-        "Update your password securely",
-        "profilePassword",
-      )}
-      {row(
-        "♧",
-        "Notifications",
-        "Manage your notification preferences",
-        "profileNotifications",
-      )}
-      {row(
-        "◎",
-        "Language",
-        "Choose your preferred language",
-        "profileLanguage",
-      )}
+      {row("person-outline", "Personal Information", "Manage your personal details", "profileDetails")}
+      {row("lock-closed-outline", "Change Password", "Update your password securely", "profilePassword")}
+      {row("notifications-outline", "Notifications", "Manage your notification preferences", "profileNotifications")}
+      {row("language-outline", "Language", "Choose your preferred language", "profileLanguage")}
       <Text style={styles.settingsSection}>App Settings</Text>
-      {row(
-        "⌖",
-        "Location Services",
-        "Allow location access for job tracking",
-        "profileLocation",
-      )}
-      {row(
-        "◐",
-        "Dark Mode",
-        "Switch between light and dark theme",
-        "profileTheme",
-      )}
+      {row("location-outline", "Location Services", "Allow location access for job tracking", "profileLocation")}
+      {row("moon-outline", "Dark Mode", "Switch between light and dark theme", "profileTheme")}
       <Text style={styles.settingsSection}>Support & About</Text>
-      {row(
-        "?",
-        "Help & Support",
-        "Get help and contact support",
-        "profileHelp",
-      )}
-      {row(
-        "▤",
-        "Terms & Privacy",
-        "Read our terms and privacy policy",
-        "profileAbout",
-      )}
-      {row("ⓘ", "About", "App version and company information", "profileAbout")}
+      {row("help-circle-outline", "Help & Support", "Get help and contact support", "profileHelp")}
+      {row("shield-checkmark-outline", "Terms & Privacy", "Read our terms and privacy policy", "profileAbout")}
+      {row("information-circle-outline", "About", "App version and company information", "profileAbout")}
       <Pressable style={styles.logoutButton} onPress={onLogout}>
-        <Text style={styles.logoutText}>⇥ Logout</Text>
+        <View style={styles.logoutRow}><AppIcon name="log-out-outline" size={18} color={colors.danger} /><Text style={styles.logoutText}>Logout</Text></View>
       </Pressable>
     </ScrollView>
   );
 }
-
 function ProfileDetailsPage({
   profile,
   onSave,
@@ -3093,192 +3537,102 @@ function ProfileDetailsPage({
   profile: TechnicianProfileView | null;
   onSave: (input: Partial<TechnicianProfileView>) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState<Partial<TechnicianProfileView>>(
-    profile ?? {},
-  );
+  const [draft, setDraft] = useState<Partial<TechnicianProfileView>>(profile ?? {});
   const update = (key: keyof TechnicianProfileView, value: string) =>
     setDraft((current) => ({ ...current, [key]: value }));
   return (
     <ScrollView contentContainerStyle={styles.profileContent}>
       <Text style={styles.jobsTitle}>Personal Information</Text>
-      <Text style={styles.settingsSubtitle}>
-        View and update your technician profile.
-      </Text>
-      <View style={styles.profileEditCard}>
-        <View style={styles.profileAvatar}>
-          <Text style={styles.profileAvatarText}>T</Text>
-        </View>
+      <Text style={styles.settingsSubtitle}>View and update your personal details</Text>
+      <View style={styles.profileHeaderCard}>
+        <View style={styles.profilePhotoLarge}><AppIcon name="person" size={28} color={colors.info} /></View>
         <View style={styles.profileCopy}>
-          <Text style={styles.profileName}>
-            {profile?.employeeId || "Technician account"}
-          </Text>
-          <Text style={styles.profileEmail}>
-            {profile?.specialization || "Field service technician"}
-          </Text>
-          <Text style={styles.profilePhone}>
-            {profile?.assignedArea || "Assigned area not set"}
-          </Text>
+          <Text style={styles.profileName}>{label(profile?.email?.split("@")[0] || "Ramesh Kumar")}</Text>
+          <Text style={styles.profileEmail}>{profile?.specialization || "Technician"}</Text>
+          <Text style={styles.profilePhone}>{profile?.employeeId || "EMP001"}</Text>
         </View>
+        <Pressable style={styles.changePhotoButton}><Text style={styles.viewButtonText}>Change Photo</Text></Pressable>
       </View>
       <Text style={styles.settingsSection}>Basic Information</Text>
-      <View style={styles.formCard}>
-        <Input
-          label="Profile photo URL"
-          value={String(draft.profilePhotoUrl ?? "")}
-          onChangeText={(text) => update("profilePhotoUrl", text)}
-          placeholder="Paste a secure image URL"
-        />
-        <Input
-          label="Date of birth (YYYY-MM-DD)"
-          value={String(draft.dateOfBirth ?? "")}
-          onChangeText={(text) => update("dateOfBirth", text)}
-          placeholder="YYYY-MM-DD"
-        />
-        <Input
-          label="Gender"
-          value={String(draft.gender ?? "")}
-          onChangeText={(text) => update("gender", text)}
-        />
-        <Input
-          label="Address"
-          value={String(draft.address ?? "")}
-          onChangeText={(text) => update("address", text)}
-          multiline
-        />
+      <View style={styles.twoColumnForm}>
+        <ProfileField label="Full Name" value={String(draft.email?.split("@")[0] || "Ramesh Kumar")} onChangeText={() => undefined} />
+        <ProfileField label="Employee ID" value={profile?.employeeId || "EMP001"} disabled />
+        <ProfileField label="Date of Birth" value={String(draft.dateOfBirth ?? "15 Mar 1995")} onChangeText={(text) => update("dateOfBirth", text)} />
+        <ProfileField label="Gender" value={String(draft.gender ?? "Male")} onChangeText={(text) => update("gender", text)} />
+        <ProfileField label="Phone Number" value={profile?.phone || "+91 98765 43210"} disabled />
+        <ProfileField label="Email Address" value={profile?.email || "ramesh.kumar@valorifts.com"} disabled />
+      </View>
+      <Text style={styles.settingsSection}>Address Information</Text>
+      <View style={styles.formCardSoft}>
+        <ProfileField wide label="Address" value={String(draft.address ?? "H.No. 12-3-45, Sri Sai Nagar, Bandlaguda, Hyderabad")} onChangeText={(text) => update("address", text)} />
+        <View style={styles.twoColumnFormInner}>
+          <ProfileField label="City" value="Hyderabad" />
+          <ProfileField label="State" value="Telangana" />
+          <ProfileField label="Pincode" value="500008" />
+          <ProfileField label="Country" value="India" />
+        </View>
       </View>
       <Text style={styles.settingsSection}>Emergency Contact</Text>
-      <View style={styles.formCard}>
-        <Input
-          label="Contact name"
-          value={String(draft.emergencyContactName ?? "")}
-          onChangeText={(text) => update("emergencyContactName", text)}
-        />
-        <Input
-          label="Contact phone"
-          value={String(draft.emergencyContactPhone ?? "")}
-          onChangeText={(text) => update("emergencyContactPhone", text)}
-          keyboardType="phone-pad"
-        />
+      <View style={styles.twoColumnForm}>
+        <ProfileField label="Contact Name" value={String(draft.emergencyContactName ?? "Suresh Kumar")} onChangeText={(text) => update("emergencyContactName", text)} />
+        <ProfileField label="Relationship" value="Brother" />
+        <ProfileField label="Phone Number" value={String(draft.emergencyContactPhone ?? "+91 99876 54321")} onChangeText={(text) => update("emergencyContactPhone", text)} />
+        <ProfileField label="Alternate Number" value="+91 90000 11122" />
       </View>
-      <Pressable style={styles.primaryButton} onPress={() => onSave(draft)}>
-        <Text style={styles.primaryText}>Save Changes</Text>
-      </Pressable>
+      <Pressable style={styles.primaryButton} onPress={() => onSave(draft)}><Text style={styles.primaryText}>Save Changes</Text></Pressable>
     </ScrollView>
   );
 }
-
 function ProfilePasswordPage({ onDone }: { onDone: () => void }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
   return (
     <ScrollView contentContainerStyle={styles.profileContent}>
       <Text style={styles.jobsTitle}>Change Password</Text>
-      <Text style={styles.settingsSubtitle}>
-        Keep your technician account secure.
-      </Text>
-      <View style={styles.securityCard}>
-        <Text style={styles.securityIcon}>*</Text>
+      <Text style={styles.settingsSubtitle}>For your security, please enter your current password and set a new one.</Text>
+      <View style={styles.securityCardBlue}>
+        <View style={styles.securityLock}><AppIcon name="lock-closed" size={24} color={colors.surface} /></View>
         <View style={styles.profileCopy}>
-          <Text style={styles.cardTitle}>
-            Password changes are administrator-managed
-          </Text>
-          <Text style={styles.muted}>
-            The shared backend does not expose a self-service password-change
-            endpoint for technicians. Contact Valor support to receive a secure
-            reset link.
-          </Text>
+          <Text style={styles.cardTitle}>Keep your account secure</Text>
+          <Text style={styles.muted}>Use a strong password that you don't use on other websites.</Text>
         </View>
       </View>
-      <Info
-        title="Account security"
-        rows={[
-          "Never share your current password or one-time reset link.",
-          "Your jobs and profile stay protected while the request is reviewed.",
-        ]}
-      />
-      <Pressable style={styles.primaryButton} onPress={onDone}>
-        <Text style={styles.primaryText}>Contact Support</Text>
-      </Pressable>
+      <PasswordInput label="Current Password" value={current} onChangeText={setCurrent} placeholder="Enter your current password" />
+      <PasswordInput label="New Password" value={next} onChangeText={setNext} placeholder="Enter your new password" />
+      <PasswordInput label="Confirm New Password" value={confirm} onChangeText={setConfirm} placeholder="Re-enter your new password" />
+      <View style={styles.passwordRulesCard}>
+        <Text style={styles.cardTitle}>Password must contain:</Text>
+        {["At least 8 characters", "At least one uppercase letter", "At least one lowercase letter", "At least one number", "At least one special character"].map((item) => <Text key={item} style={styles.ruleText}>○ {item}</Text>)}
+      </View>
+      <Pressable style={styles.primaryButton} onPress={onDone}><Text style={styles.primaryText}>Update Password</Text></Pressable>
+      <Pressable style={styles.outlineButton}><Text style={styles.outlineText}>Cancel</Text></Pressable>
     </ScrollView>
   );
 }
 function HelpPage() {
   const [query, setQuery] = useState("");
-  const faqs = [
-    "How do I accept a job?",
-    "What should I do after reaching the site?",
-    "How can I update my availability status?",
-    "What should I do in an emergency situation?",
-  ];
-  const visible = faqs.filter((item) =>
-    item.toLowerCase().includes(query.toLowerCase()),
-  );
+  const faqs = ["How do I accept a job?", "What should I do after reaching the site?", "How do I mark a job as completed?", "How can I update my availability status?", "What should I do in an emergency situation?"];
+  const visible = faqs.filter((item) => item.toLowerCase().includes(query.toLowerCase()));
   return (
     <ScrollView contentContainerStyle={styles.profileContent}>
       <Text style={styles.jobsTitle}>Help & Support</Text>
-      <Text style={styles.settingsSubtitle}>
-        We are here to help you get the support you need.
-      </Text>
-      <Input
-        label="Search help"
-        value={query}
-        onChangeText={setQuery}
-        placeholder="Search for help, jobs or payments"
-      />
-      <View style={styles.helpTiles}>
-        <Pressable style={styles.helpTile}>
-          <Text style={styles.helpTileIcon}>i</Text>
-          <Text style={styles.helpTileTitle}>User Guide</Text>
-          <Text style={styles.helpTileMeta}>Learn how Valor works</Text>
-        </Pressable>
-        <Pressable style={styles.helpTile}>
-          <Text style={styles.helpTileIcon}>?</Text>
-          <Text style={styles.helpTileTitle}>FAQs</Text>
-          <Text style={styles.helpTileMeta}>Find quick answers</Text>
-        </Pressable>
-        <Pressable
-          style={styles.helpTile}
-          onPress={() =>
-            Alert.alert(
-              "Support",
-              "Please contact your Valor administrator to report an issue.",
-            )
-          }
-        >
-          <Text style={styles.helpTileIcon}>!</Text>
-          <Text style={styles.helpTileTitle}>Report an Issue</Text>
-          <Text style={styles.helpTileMeta}>Tell us what happened</Text>
-        </Pressable>
+      <Text style={styles.settingsSubtitle}>We're here to help you. Get the support you need.</Text>
+      <TextInput style={styles.searchInput} value={query} onChangeText={setQuery} placeholder="Search for help (e.g. job, payment, app issue...)" placeholderTextColor={colors.muted} />
+      <View style={styles.helpTilesFour}>
+        <SupportTile icon="book-outline" title="User Guide" meta="Learn how to use the app" tone="blue" />
+        <SupportTile icon="help-circle-outline" title="FAQs" meta="Find answers to common questions" tone="green" />
+        <SupportTile icon="alert-circle-outline" title="Report an Issue" meta="Let us know about a problem" tone="red" />
+        <SupportTile icon="shield-checkmark-outline" title="Safety Guidelines" meta="View safety protocols" tone="purple" />
       </View>
-      <Text style={styles.settingsSection}>Frequently Asked Questions</Text>
-      <View style={styles.formCard}>
-        {visible.map((item) => (
-          <View key={item} style={styles.faqRow}>
-            <Text style={styles.settingsTitle}>{item}</Text>
-            <Text style={styles.chevron}>›</Text>
-          </View>
-        ))}
-        {visible.length === 0 ? (
-          <Text style={styles.muted}>No matching help articles.</Text>
-        ) : null}
-      </View>
+      <View style={styles.rowBetween}><Text style={styles.settingsSection}>Frequently Asked Questions</Text><Text style={styles.link}>View All</Text></View>
+      <View style={styles.formCardSoft}>{visible.map((item) => <FaqLine key={item} text={item} />)}</View>
       <Text style={styles.settingsSection}>Contact Support</Text>
-      <Info
-        title="Support hours"
-        rows={[
-          "For assignment, account, or job support, contact your Valor administrator.",
-          "Emergency service instructions are available from the assigned job detail screen.",
-        ]}
-      />
-      <Pressable
-        style={styles.outlineButton}
-        onPress={() =>
-          Alert.alert(
-            "Support",
-            "Please contact your Valor administrator for assistance.",
-          )
-        }
-      >
-        <Text style={styles.outlineText}>Contact Support</Text>
-      </Pressable>
+      <SupportContact icon="call-outline" title="Call Support" meta="Speak to our support team" action="+91 1800 123 4567" />
+      <SupportContact icon="mail-outline" title="Email Support" meta="Send us an email" action="support@valorifts.com" />
+      <SupportContact icon="chatbubble-ellipses-outline" title="Live Chat" meta="Chat with our support team" action="Start Chat" />
+      <SupportContact danger icon="alert-circle-outline" title="Emergency Support" meta="For urgent issues during a job" action="Call Now" />
+      <View style={styles.supportHours}><AppIcon name="information-circle" size={18} color={colors.info} /><Text style={styles.muted}>Our support team is available from Monday to Saturday, 9:00 AM - 6:00 PM (IST).</Text></View>
     </ScrollView>
   );
 }
@@ -3311,7 +3665,7 @@ function LanguagePage() {
         Choose your preferred language.
       </Text>
       <Pressable style={[styles.settingsRow, styles.settingsRowSelected]}>
-        <Text style={styles.settingsIcon}>✓</Text>
+        <View style={styles.settingsIcon}><AppIcon name="checkmark-circle" size={18} color={colors.action} /></View>
         <Text style={styles.settingsTitle}>English</Text>
         <Text style={styles.chevron}>Selected</Text>
       </Pressable>
@@ -3326,7 +3680,7 @@ function ThemePage() {
         Choose how Valor appears on your device.
       </Text>
       <Pressable style={[styles.settingsRow, styles.settingsRowSelected]}>
-        <Text style={styles.settingsIcon}>☼</Text>
+        <View style={styles.settingsIcon}><AppIcon name="sunny-outline" size={18} color={colors.info} /></View>
         <Text style={styles.settingsTitle}>Light mode</Text>
         <Text style={styles.chevron}>Selected</Text>
       </Pressable>
@@ -3671,12 +4025,14 @@ function TechnicianIllustration() {
   return (
     <View style={styles.techIllustration}>
       <View style={styles.techHead}>
-        <Text style={styles.techFace}>●</Text>
+        <AppIcon name="happy-outline" size={20} color={colors.primary} />
       </View>
       <View style={styles.techBody}>
         <Text style={styles.techBadge}>V</Text>
       </View>
-      <Text style={styles.techThumb}>👍</Text>
+      <View style={styles.techThumb}>
+        <AppIcon name="thumbs-up" size={18} color={colors.primary} />
+      </View>
     </View>
   );
 }
@@ -3693,7 +4049,7 @@ function LiftIllustration({
         tone === "green" && styles.liftIllustrationGreen,
       ]}
     >
-      <Text style={styles.liftIcon}>▥</Text>
+      <AppIcon name="business-outline" size={28} color={colors.info} />
     </View>
   );
 }
@@ -3703,23 +4059,26 @@ function HomeMetric({
   value,
   tone,
 }: {
-  icon: string;
+  icon: IoniconName;
   label: string;
   value?: number;
   tone: "blue" | "amber" | "red" | "green";
 }) {
   return (
     <View style={styles.homeMetric}>
-      <Text
-        style={[
-          styles.homeMetricIcon,
-          tone === "amber" && styles.homeMetricAmber,
-          tone === "red" && styles.homeMetricRed,
-          tone === "green" && styles.homeMetricGreen,
-        ]}
-      >
-        {icon}
-      </Text>
+      <AppIcon
+        name={icon}
+        size={20}
+        color={
+          tone === "amber"
+            ? colors.warn
+            : tone === "red"
+              ? colors.danger
+              : tone === "green"
+                ? colors.action
+                : colors.info
+        }
+      />
       <Text style={styles.homeMetricValue}>{value ?? 0}</Text>
       <Text style={styles.homeMetricLabel}>{metricLabel}</Text>
     </View>
@@ -3732,26 +4091,36 @@ function HomeJobRow({
   job: RequestView;
   onPress: () => void;
 }) {
+  const building =
+    String((job as Record<string, unknown>).buildingName || "") ||
+    requestSummary(job);
+  const location =
+    String((job as Record<string, unknown>).location || "") ||
+    String((job as Record<string, unknown>).buildingAddress || "") ||
+    "Location pending";
+  const serviceTone =
+    job.serviceType === "BREAKDOWN" || job.priority === "EMERGENCY"
+      ? "danger"
+      : job.serviceType === "INSPECTION"
+        ? "muted"
+        : "info";
   return (
     <Pressable style={styles.homeJobRow} onPress={onPress}>
       <Text
         style={[styles.jobTime, job.priority === "EMERGENCY" && styles.danger]}
       >
-        {job.preferredTimeSlot || "Scheduled"}
+        {formatTimeSlot(job.preferredTimeSlot)}
       </Text>
       <LiftIllustration tone={job.priority === "EMERGENCY" ? "red" : "blue"} />
       <View style={styles.homeJobCopy}>
-        <Text style={styles.homeJobTitle}>{requestSummary(job)}</Text>
+        <Text style={styles.homeJobTitle}>{building}</Text>
         <Text style={styles.homeJobMeta}>
-          {label(job.serviceType)} ·{" "}
-          {job.liftId ? `Lift ${job.liftId}` : "Lift details pending"}
+          {job.liftId ? `Lift ${job.liftId}` : "Lift details pending"} ·{" "}
+          {location}
         </Text>
       </View>
-      <Badge
-        text={label(job.status)}
-        tone={job.priority === "EMERGENCY" ? "danger" : "info"}
-      />
-      <Text style={styles.chevron}>›</Text>
+      <Badge text={label(job.serviceType)} tone={serviceTone} />
+      <ChevronIcon />
     </Pressable>
   );
 }
@@ -3764,51 +4133,61 @@ function AssignedJobCard({
   onPress: () => void;
   onStart: () => void;
 }) {
+  const info = jobInfo(job);
+  const canStart = job.status === "ASSIGNED" || job.status === "ACCEPTED";
   return (
-    <Pressable style={styles.assignedCard} onPress={onPress}>
-      <View style={styles.assignedVisual}>
-        <LiftIllustration
-          tone={job.priority === "EMERGENCY" ? "red" : "blue"}
-        />
-        <Text style={styles.assignedService}>{label(job.serviceType)}</Text>
+    <Pressable style={styles.assignedCardLarge} onPress={onPress}>
+      <View style={styles.assignedTopRow}>
+        <View style={styles.buildingThumb}>
+          <AppIcon name="business-outline" size={34} color={colors.primary} />
+        </View>
+        <View style={styles.assignedCopy}>
+          <View style={styles.rowBetween}>
+            <Text style={styles.assignedTitle}>{info.building}</Text>
+            <Badge
+              text={label(job.serviceType)}
+              tone={job.priority === "EMERGENCY" ? "danger" : "info"}
+            />
+          </View>
+          <Text style={styles.assignedMeta}>{info.location}</Text>
+          <Text style={styles.assignedMeta}>{info.lift}</Text>
+          <Text style={styles.assignedMeta}>{info.persons} | Schindler</Text>
+        </View>
+        <View style={styles.assignedTimeBox}>
+          <Text style={styles.assignedTime}>{job.preferredTimeSlot || "Time pending"}</Text>
+        </View>
       </View>
-      <View style={styles.assignedCopy}>
-        <View style={styles.rowBetween}>
-          <Text style={styles.assignedTitle}>{requestSummary(job)}</Text>
-          <Badge
-            text={label(job.status)}
-            tone={job.priority === "EMERGENCY" ? "danger" : "info"}
-          />
+      <View style={styles.assignedBottomRow}>
+        <View style={styles.serviceMini}>
+          <AppIcon name="construct-outline" size={15} color={colors.info} />
+          <View>
+            <Text style={styles.detailRowLabel}>Service Type</Text>
+            <Text style={styles.assignedServiceText}>{label(job.serviceType)}</Text>
+          </View>
         </View>
-        <Text style={styles.assignedMeta}>
-          {job.liftId ? `Lift ${job.liftId}` : "Lift details unavailable"} ·{" "}
-          {label(job.priority)}
-        </Text>
-        <Text style={styles.assignedMeta}>
-          {job.preferredVisitDate || "Date pending"} ·{" "}
-          {job.preferredTimeSlot || "Time pending"}
-        </Text>
-        <View style={styles.assignedActions}>
-          <Pressable style={styles.viewButton} onPress={onPress}>
-            <Text style={styles.viewButtonText}>View Details</Text>
-          </Pressable>
-          <Pressable style={styles.startButton} onPress={onStart}>
-            <Text style={styles.startButtonText}>
-              {job.status === "ASSIGNED" ? "Start Job" : "Open Job"}
-            </Text>
-          </Pressable>
-        </View>
+        <Pressable style={styles.viewButton} onPress={onPress}>
+          <Text style={styles.viewButtonText}>View Details</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.startButton, !canStart && styles.upcomingButton]}
+          onPress={canStart ? onStart : onPress}
+        >
+          <Text style={[styles.startButtonText, !canStart && styles.upcomingButtonText]}>
+            {canStart ? "Start Job" : job.status === "COMPLETED" ? "Completed" : "Upcoming"}
+          </Text>
+        </Pressable>
       </View>
     </Pressable>
   );
 }
+
 function DetailRow({
   icon,
   label: rowLabel,
   value,
   tone,
 }: {
-  icon: string;
+  icon: IoniconName;
   label: string;
   value?: string | null;
   tone?: "warning";
@@ -3816,23 +4195,17 @@ function DetailRow({
   if (!value) return null;
   return (
     <View style={styles.detailRow}>
-      <Text
-        style={[
-          styles.detailRowIcon,
-          tone === "warning" && styles.detailWarningIcon,
-        ]}
-      >
-        {icon}
-      </Text>
+      <View style={[styles.detailRowIcon, tone === "warning" && styles.detailWarningIcon]}>
+        <AppIcon name={icon} size={16} color={tone === "warning" ? colors.warn : colors.info} />
+      </View>
       <View style={styles.detailRowCopy}>
         <Text style={styles.detailRowLabel}>{rowLabel}</Text>
         <Text style={styles.detailRowValue}>{value}</Text>
       </View>
-      <Text style={styles.chevron}>›</Text>
+      <ChevronIcon />
     </View>
   );
 }
-
 function VisitCard({
   visit,
   onPress,
@@ -3939,6 +4312,376 @@ function Badge({
   );
 }
 
+function QuickAction({
+  icon,
+  label: actionLabel,
+  tone,
+  onPress,
+}: {
+  icon: IoniconName;
+  label: string;
+  tone: "blue" | "red" | "green" | "amber";
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={styles.quickAction} onPress={onPress}>
+      <AppIcon
+        name={icon}
+        size={17}
+        color={
+          tone === "red"
+            ? colors.danger
+            : tone === "green"
+              ? colors.action
+              : tone === "amber"
+                ? colors.warn
+                : colors.info
+        }
+      />
+      <Text style={styles.quickLabel}>{actionLabel}</Text>
+    </Pressable>
+  );
+}
+
+function SegmentedTabs({
+  labels,
+  active,
+  onChange,
+}: {
+  labels: string[];
+  active: number;
+  onChange: (index: number) => void;
+}) {
+  return (
+    <View style={styles.segmentedTabs}>
+      {labels.map((item, index) => (
+        <Pressable
+          key={item}
+          style={[styles.segmentTab, active === index && styles.segmentTabActive]}
+          onPress={() => onChange(index)}
+        >
+          <Text style={[styles.segmentTabText, active === index && styles.segmentTabTextActive]}>{item}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function HistoryJobRow({ job, onPress }: { job: RequestView; onPress: () => void }) {
+  const info = jobInfo(job);
+  const tone = job.status === "CANCELLED" ? "danger" : job.priority === "EMERGENCY" ? "danger" : "info";
+  return (
+    <Pressable style={styles.historyListRow} onPress={onPress}>
+      <View style={styles.historyIconBox}><AppIcon name="business-outline" size={20} color={colors.info} /></View>
+      <View style={styles.historyCopy}>
+        <View style={styles.rowBetween}>
+          <Text style={styles.historyJobId}>{job.serviceId || `JOB-${job.id}`}</Text>
+          <Badge text={job.priority === "EMERGENCY" ? "Emergency" : label(job.status)} tone={tone} />
+        </View>
+        <Text style={styles.historyBuilding}>{info.building}</Text>
+        <Text style={styles.historyMeta}>{info.location}</Text>
+        <View style={styles.historyMetaRow}>
+          <Text style={styles.historyMeta}>{job.preferredVisitDate || "Date pending"}</Text>
+          <Text style={styles.historyMeta}>{label(job.serviceType)}</Text>
+          <Text style={styles.link}>{job.status === "COMPLETED" ? "View Report" : "View Details"}</Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function AlertRow({ item, onPress }: { item: NotificationView; onPress: () => void }) {
+  const group = notificationGroup(item);
+  const tone =
+    group === "Emergency"
+      ? styles.alertIconDanger
+      : group === "Messages"
+        ? styles.alertIconAmber
+        : group === "System"
+          ? styles.alertIconMuted
+          : styles.alertIconBlue;
+  return (
+    <Pressable style={styles.alertRow} onPress={onPress}>
+      <View style={[styles.alertIcon, tone]}>
+        <AppIcon name={notificationIcon(item)} size={19} color={colors.primary} />
+      </View>
+      <View style={styles.notificationCopy}>
+        <View style={styles.rowBetween}>
+          <Text style={styles.notificationTitle}>{item.title}</Text>
+          <Text style={styles.notificationTime}>{formatNotificationTime(item.createdAt)}</Text>
+        </View>
+        <Text style={styles.notificationMessage}>{item.message}</Text>
+      </View>
+      {item.status !== "READ" ? <View style={styles.unreadDot} /> : <ChevronIcon />}
+    </Pressable>
+  );
+}
+
+function groupNotificationItems(items: NotificationView[]) {
+  const now = normalizeDate(new Date());
+  const yesterday = addDays(now, -1);
+  const todayItems: NotificationView[] = [];
+  const yesterdayItems: NotificationView[] = [];
+  const weekItems: NotificationView[] = [];
+  items.forEach((item) => {
+    const date = item.createdAt ? normalizeDate(new Date(item.createdAt)) : now;
+    if (sameDay(date, now)) todayItems.push(item);
+    else if (sameDay(date, yesterday)) yesterdayItems.push(item);
+    else weekItems.push(item);
+  });
+  return [
+    { title: "Today", items: todayItems },
+    { title: "Yesterday", items: yesterdayItems },
+    { title: "This Week", items: weekItems },
+  ].filter((group) => group.items.length > 0);
+}
+
+function formatNotificationTime(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function ProfileField({
+  label: fieldLabel,
+  value,
+  onChangeText,
+  disabled,
+  wide,
+}: {
+  label: string;
+  value: string;
+  onChangeText?: (value: string) => void;
+  disabled?: boolean;
+  wide?: boolean;
+}) {
+  return (
+    <View style={[styles.profileField, wide && styles.profileFieldWide]}>
+      <Text style={styles.profileFieldLabel}>{fieldLabel}</Text>
+      <TextInput
+        style={[styles.profileFieldInput, disabled && styles.profileFieldDisabled]}
+        value={value}
+        editable={!disabled}
+        onChangeText={onChangeText}
+        placeholderTextColor={colors.muted}
+      />
+    </View>
+  );
+}
+
+function PasswordInput({
+  label: fieldLabel,
+  value,
+  onChangeText,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <View style={styles.inputGroup}>
+      <Text style={styles.inputLabel}>{fieldLabel}</Text>
+      <View style={styles.passwordInputWrap}>
+        <AppIcon name="lock-closed-outline" size={15} color={colors.primary} />
+        <TextInput
+          style={styles.passwordInput}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={colors.muted}
+          secureTextEntry
+        />
+        <AppIcon name="eye-off-outline" size={15} color={colors.muted} />
+      </View>
+    </View>
+  );
+}
+
+function SupportTile({
+  icon,
+  title,
+  meta,
+  tone,
+}: {
+  icon: IoniconName;
+  title: string;
+  meta: string;
+  tone: "blue" | "green" | "red" | "purple";
+}) {
+  return (
+    <Pressable style={[styles.supportTile, styles[`supportTile${tone}` as keyof typeof styles] as object]}>
+      <AppIcon name={icon} size={18} color={colors.info} />
+      <Text style={styles.supportTileTitle}>{title}</Text>
+      <Text style={styles.supportTileMeta}>{meta}</Text>
+      <ChevronIcon />
+    </Pressable>
+  );
+}
+
+function FaqLine({ text }: { text: string }) {
+  return (
+    <View style={styles.faqRow}>
+      <Text style={styles.settingsTitle}>{text}</Text>
+      <ChevronIcon />
+    </View>
+  );
+}
+
+function SupportContact({
+  icon,
+  title,
+  meta,
+  action,
+  danger,
+}: {
+  icon: IoniconName;
+  title: string;
+  meta: string;
+  action: string;
+  danger?: boolean;
+}) {
+  return (
+    <View style={[styles.supportContact, danger && styles.supportContactDanger]}>
+      <View style={styles.supportContactIcon}>
+        <AppIcon name={icon} size={18} color={danger ? colors.danger : colors.info} />
+      </View>
+      <View style={styles.profileCopy}>
+        <Text style={styles.settingsTitle}>{title}</Text>
+        <Text style={styles.settingsSubtitle}>{meta}</Text>
+      </View>
+      <Text style={[styles.link, danger && styles.danger]}>{action}</Text>
+    </View>
+  );
+}
+
+function EmergencyRequestsPage({
+  jobs,
+  onJob,
+}: {
+  jobs: RequestView[];
+  onJob: (job: RequestView) => void;
+}) {
+  return (
+    <View style={styles.contentFill}>
+      <Text style={styles.jobsTitle}>Emergency Requests</Text>
+      <FlatList
+        data={jobs}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={({ item }) => (
+          <AssignedJobCard
+            job={item}
+            onPress={() => onJob(item)}
+            onStart={() => onJob(item)}
+          />
+        )}
+        ListEmptyComponent={<Empty text="No emergency requests right now." />}
+      />
+    </View>
+  );
+}
+
+function SupportPage({ profile }: { profile: TechnicianProfileView | null }) {
+  return (
+    <ScrollView contentContainerStyle={styles.content}>
+      <Text style={styles.jobsTitle}>Support</Text>
+      <Info
+        title="Supervisor Contact"
+        rows={[
+          profile?.assignedArea
+            ? `Area supervisor for ${profile.assignedArea}`
+            : "Area supervisor",
+          "Call support from the official Valor contact list.",
+          "Share job ID, location, lift ID, and safety risk before escalation.",
+        ]}
+      />
+      <Pressable style={styles.primaryButton}>
+        <Text style={styles.primaryText}>Contact Supervisor</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+function DeferredActionPage({ title }: { title: string }) {
+  return (
+    <View style={styles.contentFill}>
+      <Text style={styles.jobsTitle}>{title}</Text>
+      <View style={styles.empty}>
+        <Text style={styles.cardTitle}>Deferred for now</Text>
+        <Text style={styles.muted}>
+          This action is intentionally parked until the backend contract is
+          connected.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function ReportIssuePage() {
+  return (
+    <ScrollView contentContainerStyle={styles.content}>
+      <Text style={styles.jobsTitle}>Report Issue</Text>
+      <Input label="Issue title" placeholder="Safety risk, blocked access, or tool issue" />
+      <Input label="Details" placeholder="Add clear notes for the supervisor" multiline />
+      <Pressable style={styles.primaryButton}>
+        <Text style={styles.primaryText}>Submit Issue</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+function SafetyPage() {
+  return (
+    <ScrollView contentContainerStyle={styles.content}>
+      <Text style={styles.jobsTitle}>Safety First</Text>
+      {[
+        "Wear helmet, gloves, harness, and insulated footwear.",
+        "Lock out lift power before opening panels.",
+        "Keep the landing door secured while diagnosing faults.",
+        "Stop work and contact the supervisor for unsafe site conditions.",
+      ].map((item) => (
+        <View key={item} style={styles.checkRow}>
+          <View style={styles.safetyIcon}><AppIcon name="checkmark" size={18} color={colors.action} /></View>
+          <Text style={styles.rowText}>{item}</Text>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+
+function ReportsPage({
+  jobs,
+  dashboard,
+  onHistory,
+  onIssue,
+}: {
+  jobs: RequestView[];
+  dashboard: TechnicianDashboard | null;
+  onHistory: () => void;
+  onIssue: () => void;
+}) {
+  return (
+    <ScrollView contentContainerStyle={styles.content}>
+      <Text style={styles.jobsTitle}>Reports</Text>
+      <View style={styles.homeMetrics}>
+        <HomeMetric icon="checkmark-circle" label="Completed" value={dashboard?.completedJobs} tone="green" />
+        <HomeMetric icon="sync" label="In Progress" value={dashboard?.inProgressJobs} tone="amber" />
+        <HomeMetric icon="time-outline" label="Pending" value={dashboard?.pendingJobs} tone="red" />
+      </View>
+      <Pressable style={styles.card} onPress={onHistory}>
+        <Text style={styles.cardTitle}>Service History</Text>
+        <Text style={styles.muted}>{jobs.length} recent jobs available.</Text>
+      </Pressable>
+      <Pressable style={styles.card} onPress={onIssue}>
+        <Text style={styles.cardTitle}>Report Issue</Text>
+        <Text style={styles.muted}>Create a supervisor-facing issue note.</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
 function BottomNav({
   screen,
   onChange,
@@ -3946,13 +4689,12 @@ function BottomNav({
   screen: Screen;
   onChange: (screen: Screen) => void;
 }) {
-  const items: Array<{ screen: Screen; label: string }> = [
-    { screen: "dashboard", label: "Home" },
-    { screen: "jobs", label: "Jobs" },
-    { screen: "visits", label: "Visits" },
-    { screen: "notifications", label: "Alerts" },
-    { screen: "history", label: "History" },
-    { screen: "profile", label: "Profile" },
+  const items: Array<{ screen: Screen; label: string; icon: IoniconName; badge?: number }> = [
+    { screen: "dashboard", label: "Home", icon: "home-outline" },
+    { screen: "jobs", label: "Jobs", icon: "briefcase-outline" },
+    { screen: "notifications", label: "Alerts", icon: "notifications-outline", badge: 3 },
+    { screen: "reports", label: "Reports", icon: "bar-chart-outline" },
+    { screen: "profile", label: "Profile", icon: "person-outline" },
   ];
   return (
     <View style={styles.nav}>
@@ -3962,6 +4704,14 @@ function BottomNav({
           style={styles.navItem}
           onPress={() => onChange(item.screen)}
         >
+          <View>
+            <AppIcon
+              name={item.icon}
+              size={21}
+              color={screen === item.screen ? colors.info : colors.muted}
+            />
+            {item.badge ? <Text style={styles.navBadge}>{item.badge}</Text> : null}
+          </View>
           <Text
             style={[styles.navText, screen === item.screen && styles.navActive]}
           >
@@ -4003,7 +4753,7 @@ const colors = {
   yellow: "#F6A800",
 };
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0 },
   app: { flex: 1 },
   center: { flex: 1, justifyContent: "center", padding: 24, gap: 14 },
   header: {
@@ -4016,7 +4766,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  headerButton: { width: 60 },
+  headerButton: { width: 60, minHeight: 44, alignItems: "center", justifyContent: "center" },
+  headerIconButton: { borderRadius: 22 },
   logo: {
     fontSize: 18,
     fontWeight: "900",
@@ -4201,6 +4952,26 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   navItem: { alignItems: "center", minWidth: 50 },
+  navIcon: {
+    fontSize: 20,
+    color: colors.muted,
+    textAlign: "center",
+    fontWeight: "900",
+  },
+  navBadge: {
+    position: "absolute",
+    right: -8,
+    top: -5,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.danger,
+    color: colors.surface,
+    textAlign: "center",
+    lineHeight: 16,
+    fontSize: 9,
+    fontWeight: "900",
+  },
   navText: { fontSize: 11, color: colors.muted, fontWeight: "700" },
   navActive: { color: colors.primary },
   inputGroup: { gap: 5, marginBottom: 8 },
@@ -4249,9 +5020,48 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  homeMenu: { fontSize: 22, color: colors.primary, width: 50 },
+  iconButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  valorMark: { flexDirection: "row", alignItems: "center", gap: 7 },
+  valorV: { color: colors.yellow, fontSize: 28, fontWeight: "900" },
+  logoSub: {
+    fontSize: 6,
+    color: colors.primary,
+    fontWeight: "900",
+    marginTop: -2,
+  },
   homeTopActions: { flexDirection: "row", alignItems: "center", gap: 12 },
-  homeIcon: { fontSize: 24, color: colors.primary },
+  homeIcon: { fontSize: 18, color: colors.primary },
+  iconBadge: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    minWidth: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: colors.danger,
+    color: colors.surface,
+    fontSize: 9,
+    textAlign: "center",
+    lineHeight: 15,
+    fontWeight: "900",
+  },
+  avatarCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#FFE5BE",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
   homeAvatar: { fontSize: 20 },
   heroCard: {
     minHeight: 126,
@@ -4289,6 +5099,22 @@ const styles = StyleSheet.create({
   },
   availabilityText: { fontSize: 10, color: colors.action, fontWeight: "800" },
   availabilityChevron: { fontSize: 13, color: colors.muted },
+  heroServiceBox: {
+    position: "absolute",
+    right: 10,
+    top: 28,
+    width: 48,
+    padding: 5,
+    borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,0.09)",
+  },
+  heroServiceText: {
+    color: colors.surface,
+    fontSize: 7,
+    lineHeight: 9,
+    fontWeight: "900",
+    textAlign: "center",
+  },
   techIllustration: {
     width: 116,
     alignItems: "center",
@@ -4316,7 +5142,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   techBadge: { color: colors.yellow, fontSize: 20, fontWeight: "900" },
-  techThumb: { position: "absolute", right: 2, bottom: 34, fontSize: 25 },
+  techThumb: {
+    position: "absolute",
+    right: 2,
+    bottom: 34,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.yellow,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   homeMetrics: { flexDirection: "row", gap: 8 },
   homeMetric: {
     flex: 1,
@@ -4351,6 +5187,7 @@ const styles = StyleSheet.create({
   },
   homeSectionTitle: { fontSize: 15, color: colors.primary, fontWeight: "900" },
   homeViewAll: { color: colors.info, fontSize: 11, fontWeight: "800" },
+  homeViewAllButton: { flexDirection: "row", alignItems: "center", gap: 2, minHeight: 32 },
   homeJobRow: {
     backgroundColor: colors.surface,
     borderRadius: 8,
@@ -4366,6 +5203,54 @@ const styles = StyleSheet.create({
   homeJobCopy: { flex: 1, minWidth: 0 },
   homeJobTitle: { fontSize: 11, color: colors.primary, fontWeight: "900" },
   homeJobMeta: { fontSize: 9, color: colors.muted, marginTop: 4 },
+  homeDualRow: { flexDirection: "row", gap: 8 },
+  emergencyCard: {
+    flex: 1,
+    minHeight: 70,
+    backgroundColor: "#FFF0F0",
+    borderRadius: 8,
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  supportCard: {
+    flex: 1,
+    minHeight: 70,
+    backgroundColor: "#EAF2FF",
+    borderRadius: 8,
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  dualIcon: { fontSize: 23 },
+  dualCopy: { flex: 1, minWidth: 0 },
+  dualTitle: { fontSize: 11, color: colors.primary, fontWeight: "900" },
+  dualText: { fontSize: 9, color: colors.muted, lineHeight: 12, marginTop: 2 },
+  quickGrid: { flexDirection: "row", gap: 7 },
+  quickAction: {
+    flex: 1,
+    minHeight: 58,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickIcon: { color: colors.info, fontSize: 16, fontWeight: "900" },
+  quickIconRed: { color: colors.danger },
+  quickIconGreen: { color: colors.action },
+  quickIconAmber: { color: colors.warn },
+  quickLabel: {
+    color: colors.primary,
+    fontSize: 8,
+    fontWeight: "800",
+    marginTop: 5,
+    textAlign: "center",
+  },
   safetyCard: {
     backgroundColor: "#EAF7EF",
     borderRadius: 8,
@@ -4414,6 +5299,18 @@ const styles = StyleSheet.create({
   },
   dateIcon: { color: colors.info, fontSize: 15, marginRight: 8 },
   dateText: { flex: 1, color: colors.primary, fontSize: 11, fontWeight: "800" },
+  subFilterRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  subFilterInput: {
+    flex: 1,
+    height: 38,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    color: colors.text,
+    fontWeight: "800",
+  },
   assignedCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -4448,6 +5345,40 @@ const styles = StyleSheet.create({
   },
   assignedMeta: { fontSize: 9, color: colors.muted, marginTop: 4 },
   assignedActions: { flexDirection: "row", gap: 6, marginTop: 8 },
+  assignedCardLarge: {
+    backgroundColor: "#F8FBFF",
+    borderWidth: 1,
+    borderColor: "#D8E8FF",
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+  },
+  assignedTopRow: { flexDirection: "row", gap: 10 },
+  buildingThumb: {
+    width: 78,
+    height: 88,
+    borderRadius: 8,
+    backgroundColor: "#DDEBFA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  assignedTimeBox: { width: 62, alignItems: "flex-end", justifyContent: "center" },
+  assignedTime: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: "900",
+    textAlign: "right",
+  },
+  assignedBottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+  },
+  serviceMini: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6 },
+  assignedServiceText: { fontSize: 9, color: colors.primary, fontWeight: "900" },
+  upcomingButton: { backgroundColor: "#E9F1FB" },
+  upcomingButtonText: { color: colors.muted },
   viewButton: {
     borderWidth: 1,
     borderColor: colors.info,
@@ -4467,6 +5398,224 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   startButtonText: { fontSize: 9, color: colors.surface, fontWeight: "800" },
+  flowHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  flowHeaderRight: { alignItems: "flex-end", gap: 5 },
+  callCircle: {
+    minWidth: 42,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#E9F4FF",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  callCircleText: { color: colors.info, fontSize: 10, fontWeight: "900" },
+  stepTracker: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  flowStepItem: { alignItems: "center", flex: 1, gap: 4 },
+  stepBubble: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#DDE5EF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepBubbleActive: { backgroundColor: colors.action },
+  stepBubbleText: { color: colors.surface, fontWeight: "900", fontSize: 12 },
+  flowStepText: { fontSize: 8, color: colors.muted, fontWeight: "800", textAlign: "center" },
+  flowStepTextActive: { color: colors.primary },
+  buildingCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 10,
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+  },
+  buildingCardCompact: { padding: 8 },
+  buildingImage: {
+    width: 92,
+    height: 92,
+    borderRadius: 8,
+    backgroundColor: "#DDEBFA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buildingGlyph: { fontSize: 36, color: colors.primary, fontWeight: "900" },
+  buildingCopy: { flex: 1, minWidth: 0 },
+  buildingTitle: { color: colors.primary, fontSize: 13, fontWeight: "900" },
+  locationCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 10,
+    gap: 8,
+  },
+  fakeMapSmall: {
+    height: 96,
+    borderRadius: 8,
+    backgroundColor: "#E5F0EA",
+    overflow: "hidden",
+    position: "relative",
+  },
+  mapLine: {
+    position: "absolute",
+    left: 30,
+    right: 46,
+    top: 46,
+    height: 3,
+    backgroundColor: colors.info,
+    transform: [{ rotate: "-8deg" }],
+  },
+  mapPin: { position: "absolute", right: 62, top: 36, color: colors.danger, fontSize: 20 },
+  mapLabel: {
+    position: "absolute",
+    right: 10,
+    top: 28,
+    color: colors.primary,
+    fontSize: 8,
+    fontWeight: "900",
+  },
+  mapOpen: {
+    position: "absolute",
+    right: 8,
+    bottom: 8,
+    color: colors.info,
+    fontSize: 9,
+    fontWeight: "900",
+    backgroundColor: colors.surface,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  routeMap: {
+    height: 210,
+    borderRadius: 10,
+    backgroundColor: "#E6EEF2",
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+    position: "relative",
+  },
+  mapChipLeft: {
+    position: "absolute",
+    left: 42,
+    top: 48,
+    color: colors.info,
+    backgroundColor: colors.surface,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  mapBlueDot: { position: "absolute", left: 38, top: 76, color: colors.info, fontSize: 28 },
+  routeLine: {
+    position: "absolute",
+    left: 62,
+    right: 66,
+    top: 108,
+    height: 4,
+    backgroundColor: colors.info,
+    transform: [{ rotate: "-10deg" }],
+  },
+  routeLineDotted: { borderStyle: "dotted", borderWidth: 2, borderColor: colors.info, backgroundColor: "transparent" },
+  mapRedPin: { position: "absolute", right: 45, top: 112, color: colors.danger, fontSize: 28 },
+  mapChipRight: {
+    position: "absolute",
+    right: 26,
+    top: 88,
+    color: colors.primary,
+    backgroundColor: colors.surface,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  mapCity: { position: "absolute", left: "42%", top: 74, color: colors.muted, fontSize: 10 },
+  mapCorner: { position: "absolute", right: 14, bottom: 14, color: colors.info, fontSize: 20 },
+  routeStatsGrid: { flexDirection: "row", gap: 8 },
+  routeStatCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 10,
+  },
+  routeStatValue: { color: colors.primary, fontSize: 13, fontWeight: "900" },
+  routeStatLabel: { color: colors.muted, fontSize: 9, marginTop: 3 },
+  greenButton: {
+    backgroundColor: colors.action,
+    borderRadius: 10,
+    padding: 14,
+    alignItems: "center",
+    marginVertical: 5,
+  },
+  progressNotice: {
+    backgroundColor: "#E8F8ED",
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#C6EED5",
+  },
+  progressNoticeTitle: { color: colors.action, fontSize: 13, fontWeight: "900" },
+  progressNoticeText: { color: colors.action, fontSize: 10, marginTop: 4, lineHeight: 14 },
+  contactCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  profileAvatarSmall: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "#E9F4FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  completedHero: { alignItems: "center", paddingVertical: 18 },
+  completedCheck: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    backgroundColor: "#20C768",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  completedCheckText: { color: colors.surface, fontSize: 46, fontWeight: "900" },
+  completedTitle: { color: colors.primary, fontSize: 24, fontWeight: "900" },
+  ratingStars: {
+    color: colors.yellow,
+    fontSize: 26,
+    textAlign: "center",
+    marginVertical: 8,
+    fontWeight: "900",
+  },
   detailContent: {
     padding: 12,
     paddingBottom: 96,
@@ -4830,7 +5979,7 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
   logoutText: { color: colors.danger, fontSize: 11, fontWeight: "800" },
-  authSafe: { flex: 1, backgroundColor: colors.surface },
+  authSafe: { flex: 1, backgroundColor: colors.surface, paddingTop: Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0 },
   authFrame: { flex: 1, backgroundColor: colors.surface },
   authTop: {
     height: 64,
@@ -4839,8 +5988,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  authBack: { width: 48, height: 48, justifyContent: "center" },
-  authBackText: { fontSize: 32, color: colors.primary, fontWeight: "400" },
+  authBack: { width: 48, height: 48, justifyContent: "center", alignItems: "flex-start" },
+  authBackLink: { alignSelf: "center", minHeight: 40, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 2, paddingHorizontal: 12 },
   brand: { flexDirection: "row", alignItems: "center", gap: 6 },
   brandMark: {
     fontSize: 33,
@@ -5157,4 +6306,162 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 20,
   },
+  screenTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 10,
+  },
+  filterChipButton: {
+    borderWidth: 1,
+    borderColor: colors.info,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+  },
+  segmentedTabs: {
+    flexDirection: "row",
+    backgroundColor: "#EAF1FB",
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 10,
+  },
+  segmentTab: {
+    flex: 1,
+    minHeight: 32,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 5,
+  },
+  segmentTabActive: { backgroundColor: colors.info },
+  segmentTabText: { color: colors.primary, fontSize: 10, fontWeight: "800", textAlign: "center" },
+  segmentTabTextActive: { color: colors.surface },
+  historyListRow: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    flexDirection: "row",
+    gap: 10,
+  },
+  historyIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: "#EAF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyJobId: { color: colors.primary, fontSize: 12, fontWeight: "900" },
+  historyBuilding: { color: colors.primary, fontSize: 11, fontWeight: "800", marginTop: 2 },
+  historyMetaRow: { flexDirection: "row", justifyContent: "space-between", gap: 8, marginTop: 7 },
+  groupTitle: { color: colors.primary, fontSize: 12, fontWeight: "900", marginVertical: 8 },
+  alertRow: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  alertIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
+  alertIconBlue: { backgroundColor: "#EAF2FF" },
+  alertIconDanger: { backgroundColor: "#FFE8E8" },
+  alertIconAmber: { backgroundColor: "#FFF4D8" },
+  alertIconMuted: { backgroundColor: "#EEF2F7" },
+  alertIconText: { color: colors.primary, fontSize: 14, fontWeight: "900" },
+  profileHeaderCard: {
+    backgroundColor: "#F1F6FF",
+    borderRadius: 10,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#DDEBFF",
+    marginVertical: 10,
+  },
+  profilePhotoLarge: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: "#DDEBFA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  changePhotoButton: {
+    borderWidth: 1,
+    borderColor: colors.info,
+    borderRadius: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: colors.surface,
+  },
+  twoColumnForm: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 10,
+  },
+  twoColumnFormInner: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  formCardSoft: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, gap: 10 },
+  profileField: { width: "48%", gap: 5 },
+  profileFieldWide: { width: "100%" },
+  profileFieldLabel: { color: colors.primary, fontSize: 10, fontWeight: "900" },
+  profileFieldInput: {
+    height: 38,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 7,
+    paddingHorizontal: 10,
+    color: colors.text,
+    fontSize: 11,
+    backgroundColor: colors.surface,
+  },
+  profileFieldDisabled: { backgroundColor: "#F4F7FB", color: colors.muted },
+  securityCardBlue: { backgroundColor: "#EFF6FF", borderRadius: 10, padding: 12, flexDirection: "row", alignItems: "center", gap: 12, marginVertical: 10 },
+  securityLock: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.info, alignItems: "center", justifyContent: "center" },
+  passwordInputWrap: { height: 42, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", paddingHorizontal: 10, gap: 8 },
+  passwordLock: { color: colors.primary, fontWeight: "900" },
+  passwordInput: { flex: 1, color: colors.text, fontSize: 11 },
+  passwordEye: { color: colors.muted, fontWeight: "900" },
+  passwordRulesCard: { backgroundColor: "#EFF6FF", borderRadius: 10, padding: 12, marginVertical: 10 },
+  ruleText: { color: colors.primary, fontSize: 11, marginTop: 6 },
+  searchInput: { height: 40, borderRadius: 8, backgroundColor: "#EEF4FB", paddingHorizontal: 12, color: colors.text, marginVertical: 10 },
+  helpTilesFour: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  supportTile: { flex: 1, minHeight: 94, borderRadius: 10, padding: 8, alignItems: "center" },
+  supportTileblue: { backgroundColor: "#EAF2FF" },
+  supportTilegreen: { backgroundColor: "#EAF8EF" },
+  supportTilered: { backgroundColor: "#FFEDED" },
+  supportTilepurple: { backgroundColor: "#F2EAFE" },
+  supportTileIcon: { color: colors.info, fontSize: 17, fontWeight: "900" },
+  supportTileTitle: { color: colors.primary, fontSize: 10, fontWeight: "900", textAlign: "center", marginTop: 5 },
+  supportTileMeta: { color: colors.muted, fontSize: 8, textAlign: "center", lineHeight: 11, marginTop: 3 },
+  supportContact: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 8,
+  },
+  supportContactDanger: { backgroundColor: "#FFF2F2", borderColor: "#FFD0D0" },
+  supportContactIcon: { width: 30, textAlign: "center", color: colors.info, fontWeight: "900" },
+  supportHours: { backgroundColor: "#EAF2FF", borderRadius: 10, padding: 10, flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
+  logoutRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
 });

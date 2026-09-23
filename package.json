@@ -15,6 +15,7 @@
   "dependencies": {
     "@babel/runtime": "^7.29.7",
     "@expo/metro-runtime": "~57.0.15",
+    "@expo/vector-icons": "^15.0.2",
     "axios": "^1.8.0",
     "expo": "~57.0.23",
     "expo-document-picker": "~57.0.2",

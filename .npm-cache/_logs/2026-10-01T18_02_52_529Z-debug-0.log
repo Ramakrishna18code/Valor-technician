@@ -1,0 +1,58 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Users\rk405\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js
+1 info using npm@12.1.0
+2 info using node@v24.19.0
+3 silly config load:file:C:\Users\rk405\AppData\Roaming\npm\node_modules\npm\npmrc
+4 silly config load:file:C:\Rama Krishna\Technician\Valor-technician\.npmrc
+5 silly config load:file:C:\Users\rk405\.npmrc
+6 silly config load:file:C:\Users\rk405\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm install expo-linear-gradient@~57.0.2
+8 verbose argv "install" "expo-linear-gradient@~57.0.2" "--ignore-scripts" "--cache" ".npm-cache" "--no-audit" "--no-fund"
+9 verbose logfile logs-max:10 dir:C:\Rama Krishna\Technician\Valor-technician\.npm-cache\_logs\2026-10-01T18_02_52_529Z-
+10 verbose logfile C:\Rama Krishna\Technician\Valor-technician\.npm-cache\_logs\2026-10-01T18_02_52_529Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:2348810240 maxSize:587202560 maxEntrySize:293601280
+13 silly idealTree buildDeps
+14 silly fetch manifest expo-linear-gradient@~57.0.2
+15 silly packumentCache full:https://registry.npmjs.org/expo-linear-gradient cache-miss
+16 http fetch GET 200 https://registry.npmjs.org/expo-linear-gradient 6548ms (cache miss)
+17 silly packumentCache full:https://registry.npmjs.org/expo-linear-gradient set size:undefined disposed:false
+18 silly fetch manifest expo@~57.0.23
+19 silly packumentCache full:https://registry.npmjs.org/expo cache-miss
+20 http fetch GET 200 https://registry.npmjs.org/expo 3044ms (cache miss)
+21 silly packumentCache full:https://registry.npmjs.org/expo set size:undefined disposed:false
+22 silly fetch manifest @expo/metro-runtime@~57.0.15
+23 silly packumentCache full:https://registry.npmjs.org/@expo%2fmetro-runtime cache-miss
+24 http fetch GET 200 https://registry.npmjs.org/@expo%2fmetro-runtime 736ms (cache miss)
+25 silly packumentCache full:https://registry.npmjs.org/@expo%2fmetro-runtime set size:undefined disposed:false
+26 silly fetch manifest react@19.2.3
+27 silly packumentCache full:https://registry.npmjs.org/react cache-miss
+28 http fetch GET 200 https://registry.npmjs.org/react 3031ms (cache miss)
+29 silly packumentCache full:https://registry.npmjs.org/react set size:undefined disposed:false
+30 silly fetch manifest react-dom@19.2.3
+31 silly packumentCache full:https://registry.npmjs.org/react-dom cache-miss
+32 http fetch GET 200 https://registry.npmjs.org/react-dom 2018ms (cache miss)
+33 silly packumentCache full:https://registry.npmjs.org/react-dom set size:undefined disposed:false
+34 silly fetch manifest react-native@0.86.3
+35 silly packumentCache full:https://registry.npmjs.org/react-native cache-miss
+36 http fetch GET 200 https://registry.npmjs.org/react-native 4489ms (cache miss)
+37 silly packumentCache full:https://registry.npmjs.org/react-native set size:undefined disposed:false
+38 silly fetch manifest @types/react@^19.1.1
+39 silly packumentCache full:https://registry.npmjs.org/@types%2freact cache-miss
+40 http fetch GET 200 https://registry.npmjs.org/@types%2freact 1322ms (cache miss)
+41 silly packumentCache full:https://registry.npmjs.org/@types%2freact set size:undefined disposed:false
+42 silly fetch manifest react-native-web@~0.21.2
+43 silly packumentCache full:https://registry.npmjs.org/react-native-web cache-miss
+44 http fetch GET 200 https://registry.npmjs.org/react-native-web 706ms (cache miss)
+45 silly packumentCache full:https://registry.npmjs.org/react-native-web set size:undefined disposed:false
+46 silly placeDep ROOT expo-linear-gradient@57.0.2 OK for: valor-technician-app@0.1.0 want: ~57.0.2
+47 silly reify moves {}
+48 http cache expo-linear-gradient@https://registry.npmjs.org/expo-linear-gradient/-/expo-linear-gradient-57.0.2.tgz 0ms (cache hit)
+49 silly tarball no local data for expo-linear-gradient@https://registry.npmjs.org/expo-linear-gradient/-/expo-linear-gradient-57.0.2.tgz. Extracting by manifest.
+50 http fetch GET 200 https://registry.npmjs.org/expo-linear-gradient/-/expo-linear-gradient-57.0.2.tgz 1298ms (cache miss)
+51 silly ADD node_modules/expo-linear-gradient
+52 verbose cwd C:\Rama Krishna\Technician\Valor-technician
+53 verbose os Windows_NT 10.0.26200
+54 verbose node v24.19.0
+55 verbose npm  v12.1.0
+56 verbose exit 0
+57 info ok

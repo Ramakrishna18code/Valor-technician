@@ -1,8 +1,15 @@
+import Dashboard from "./screens/DashboardScreen";
+import WelcomeScreen from "./screens/WelcomeScreen";
+import { ServiceHero, ServiceReveal, ServiceSection } from "./components/ServiceExperience";
+import ArrivalVerification from "./components/ArrivalVerification";
+import { LinearGradient } from "expo-linear-gradient";
+import { colors, styles } from "./theme/screenStyles";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -10,7 +17,6 @@ import {
   SafeAreaView,
   ScrollView,
   StatusBar,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -28,6 +34,10 @@ import {
   type TechnicianApplicationDocument,
 } from "./api/technicianApplicationApi";
 import { tokenStorage } from "./storage/tokens";
+import {
+  TECHNICIAN_PRIMARY_NAV,
+  type Screen,
+} from "./screens/screenRegistry";
 import {
   ensureBackgroundTracking,
   stopBackgroundTracking,
@@ -53,30 +63,6 @@ import type {
   LocationView,
 } from "./types/technician";
 
-type Screen =
-  | "dashboard"
-  | "jobs"
-  | "visits"
-  | "notifications"
-  | "history"
-  | "reports"
-  | "profile"
-  | "profileDetails"
-  | "profilePassword"
-  | "profileHelp"
-  | "profileLocation"
-  | "profileLanguage"
-  | "profileTheme"
-  | "profileNotifications"
-  | "profileAbout"
-  | "emergencyRequests"
-  | "support"
-  | "scanQr"
-  | "requestParts"
-  | "reportIssue"
-  | "safety"
-  | "jobDetail"
-  | "visitDetail";
 type ModalMode =
   | "report"
   | "transition"
@@ -87,6 +73,7 @@ type ModalMode =
   | "privateAttachment";
 type SessionState = "booting" | "anonymous" | "authenticated";
 type AuthStage =
+  | "welcome"
   | "login"
   | "basic"
   | "otp"
@@ -106,7 +93,6 @@ type TrackingState = {
 type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 
 const IN_PROGRESS: RequestStatus[] = [
-  "ACCEPTED",
   "ON_THE_WAY",
   "REACHED_SITE",
   "DIAGNOSIS",
@@ -139,9 +125,9 @@ const JOB_FILTERS: Array<{
 }> = [
   { label: "All" },
   { label: "Pending", status: "ASSIGNED" },
+  { label: "Accepted", status: "ACCEPTED" },
   { label: "In Progress", statuses: IN_PROGRESS },
   { label: "Completed", status: "COMPLETED" },
-  { label: "Cancelled", status: "CANCELLED" },
 ];
 const DATE_FILTERS = [
   { label: "Today", key: "today" },
@@ -281,7 +267,7 @@ const jobInfo = (request: RequestView) => {
     (request.liftId ? `Lift ${request.liftId}` : "Lift details pending");
   const persons =
     fieldText(source, ["persons", "passengerCapacity", "capacity"]) ||
-    "15 Persons";
+    "Capacity not provided";
   const customer =
     fieldText(source, ["customerName", "ownerName", "contactName"]) ||
     (request.customerProfileId
@@ -330,7 +316,7 @@ const err = (error: unknown) =>
 
 export default function App() {
   const [session, setSession] = useState<SessionState>("booting");
-  const [authStage, setAuthStage] = useState<AuthStage>("login");
+  const [authStage, setAuthStage] = useState<AuthStage>("welcome");
   const [application, setApplication] = useState<TechnicianApplication | null>(
     null,
   );
@@ -339,6 +325,7 @@ export default function App() {
   const [dashboard, setDashboard] = useState<TechnicianDashboard | null>(null);
   const [profile, setProfile] = useState<TechnicianProfileView | null>(null);
   const [jobs, setJobs] = useState<PageView<RequestView> | null>(null);
+  const [overviewJobs, setOverviewJobs] = useState<RequestView[]>([]);
   const [history, setHistory] = useState<PageView<RequestView> | null>(null);
   const [visits, setVisits] = useState<PageView<VisitView> | null>(null);
   const [notifications, setNotifications] =
@@ -408,6 +395,7 @@ export default function App() {
       setDashboard(nextDashboard);
       setProfile(nextProfile);
       setJobs(nextJobs);
+      setOverviewJobs(nextJobs.items);
       setVisits(nextVisits);
       setNotifications(nextNotifications);
       setPrivateAttachments(nextPrivateAttachments);
@@ -666,8 +654,8 @@ export default function App() {
   const activeJobs =
     jobs?.items.filter(
       (item) =>
-        !JOB_FILTERS[jobFilter].statuses ||
-        JOB_FILTERS[jobFilter].statuses?.includes(item.status),
+        (!JOB_FILTERS[jobFilter].status || JOB_FILTERS[jobFilter].status === item.status) &&
+        (!JOB_FILTERS[jobFilter].statuses || JOB_FILTERS[jobFilter].statuses?.includes(item.status)),
     ) ?? [];
 
   return (
@@ -702,35 +690,22 @@ export default function App() {
         {screen === "dashboard" && (
           <Dashboard
             dashboard={dashboard}
-            jobs={jobs?.items ?? []}
+            jobs={overviewJobs}
             visits={visits?.items ?? []}
             loading={loading}
             onRefresh={loadCore}
             onJobs={() => setScreen("jobs")}
             onJob={openJob}
-            onStartJob={async (job) => {
-              try {
-                if (job.status === "ASSIGNED") {
-                  await technicianApi.transition(job.id, "ACCEPTED");
-                  await technicianApi.transition(job.id, "ON_THE_WAY");
-                } else if (job.status === "ACCEPTED") {
-                  await technicianApi.transition(job.id, "ON_THE_WAY");
-                }
-                await loadCore();
-              } catch (error) {
-                setMessage(err(error));
-              }
-            }}
             onNotifications={() => setScreen("notifications")}
             onProfile={() => setScreen("profile")}
-            onMenu={() => setScreen("profile")}
             onEmergency={() => setScreen("emergencyRequests")}
             onSupport={() => setScreen("support")}
-            onScanQr={() => setScreen("scanQr")}
-            onRequestParts={() => setScreen("requestParts")}
+            
             onHistory={() => setScreen("history")}
-            onReportIssue={() => setScreen("reportIssue")}
             onSafety={() => setScreen("safety")}
+            onReports={() => setScreen("reports")}
+            onVisits={() => setScreen("visits")}
+            unreadCount={notifications?.items.filter(item => item.status !== "READ").length ?? 0}
           />
         )}
         {screen === "jobs" && (
@@ -779,7 +754,7 @@ export default function App() {
                 .then(() => setScreen("history"))
                 .catch((error) => setMessage(err(error)))
             }
-            onIssue={() => setScreen("reportIssue")}
+            onIssue={() => setScreen("jobs")}
           />
         )}
         {screen === "emergencyRequests" && (
@@ -981,6 +956,7 @@ export default function App() {
         {!needsHeader(screen) && (
             <BottomNav
               screen={screen}
+              unreadCount={notifications?.items.filter((item) => item.status !== "READ").length ?? 0}
               onChange={(next) => {
                 if (next === "history")
                   loadHistory().catch((error) => setMessage(err(error)));
@@ -1145,12 +1121,16 @@ function TechnicianAuthFlow({
     setWorking(true);
     onMessage(null);
     try {
-      const created = await technicianApplicationApi.create({
-        fullName: basic.fullName,
-        phone: basic.phone,
-        email: basic.email,
-        password: basic.password,
-      });
+      // A failed OTP request must not create the same application again.
+      const created = application && applicationToken &&
+        application.email.toLowerCase() === basic.email.trim().toLowerCase()
+        ? { application, applicationToken }
+        : await technicianApplicationApi.create({
+            fullName: basic.fullName,
+            phone: basic.phone,
+            email: basic.email,
+            password: basic.password,
+          });
       onApplication(created.application, created.applicationToken);
       const sent = await technicianApplicationApi.sendOtp(
         created.application.id,
@@ -1159,7 +1139,7 @@ function TechnicianAuthFlow({
       if (sent.otp) {
         setOtp(sent.otp);
         onMessage(
-          `Use OTP ${sent.otp} for now. SMS delivery will be connected later.`,
+          `SMS is not available yet. Use verification code ${sent.otp}.`,
         );
       }
       onStage("otp");
@@ -1280,11 +1260,24 @@ function TechnicianAuthFlow({
     }
   };
   const screens: Record<AuthStage, React.ReactNode> = {
+    welcome: (
+      <WelcomeScreen
+        onGetStarted={() => {
+          onMessage(null);
+          onStage("basic");
+        }}
+        onSignIn={() => {
+          onMessage(null);
+          onStage("login");
+        }}
+      />
+    ),
     login: (
       <LoginScreen
         onLogin={onLogin}
         loading={loading}
         message={message}
+        onBack={() => onStage("welcome")}
         onRegister={() => {
           onMessage(null);
           onStage("basic");
@@ -1296,7 +1289,8 @@ function TechnicianAuthFlow({
         value={basic}
         onChange={(next) => setBasic(next as typeof basic)}
         onNext={submitBasic}
-        onBack={() => onStage("login")}
+        onBack={() => onStage("welcome")}
+        onSignIn={() => onStage("login")}
         loading={working}
         message={message}
       />
@@ -1384,8 +1378,9 @@ function AuthFrame({
 }) {
   return (
     <View style={styles.authFrame}>
+      <LinearGradient colors={["#EDF4FF", "#FFFFFF", "#FFF9EF"]} style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }} />
       <View style={styles.authTop}>
-        <Pressable onPress={onBack} style={styles.authBack}>
+        <Pressable onPress={onBack} disabled={!onBack} accessibilityRole="button" accessibilityLabel="Go back" style={styles.authBack}>
           {onBack ? (
             <AppIcon name="chevron-back" size={24} color={colors.primary} />
           ) : null}
@@ -1394,14 +1389,14 @@ function AuthFrame({
           <Text style={styles.brandMark}>V</Text>
           <View>
             <Text style={styles.brandName}>VALOR</Text>
-            <Text style={styles.brandSub}>LIFT SERVICES</Text>
+            <Text style={styles.brandSub}>TECHNICIAN</Text>
           </View>
         </View>
-        <Text style={styles.stepText}>{step ? `Step ${step} of 4` : ""}</Text>
+        <Text style={styles.stepText}>{step ? `Step ${step} of 5` : ""}</Text>
       </View>
       {step ? (
         <View style={styles.stepper}>
-          {["Basic Details", "Professional", "Documents", "Verify"].map(
+          {["Basic details", "Phone verification", "Professional details", "Documents", "Review"].map(
             (item, index) => (
               <View key={item} style={styles.stepItem}>
                 <View
@@ -1411,7 +1406,7 @@ function AuthFrame({
                   ]}
                 >
                   <Text style={styles.stepDotText}>
-                    {index + 1 <= step ? "OK" : index + 1}
+                    {index + 1 < step ? "✓" : index + 1}
                   </Text>
                 </View>
                 <Text style={styles.stepLabel}>{item}</Text>
@@ -1435,6 +1430,7 @@ function BasicDetailsScreen({
   onChange,
   onNext,
   onBack,
+  onSignIn,
   loading,
   message,
 }: {
@@ -1442,6 +1438,7 @@ function BasicDetailsScreen({
   onChange: (value: Record<string, string>) => void;
   onNext: () => void;
   onBack: () => void;
+  onSignIn: () => void;
   loading: boolean;
   message: string | null;
 }) {
@@ -1449,13 +1446,9 @@ function BasicDetailsScreen({
     onChange({ ...value, [key]: next });
   return (
     <AuthFrame step={1} onBack={onBack}>
-      <Text style={styles.authTitle}>Create Account</Text>
+      <Text style={styles.authTitle}>Create your technician account</Text>
       <Text style={styles.authSubtitle}>
-        Join as a Technician and be part of safer buildings.
-      </Text>
-      <Text style={styles.authSectionTitle}>Basic Details</Text>
-      <Text style={styles.authHelper}>
-        Enter your personal information to get started.
+        Start with your contact details, then verify your phone number.
       </Text>
       <AuthInput
         label="Full Name"
@@ -1465,7 +1458,7 @@ function BasicDetailsScreen({
       />
       <AuthInput
         label="Phone Number"
-        placeholder="Enter 10 digit mobile number"
+        placeholder="Enter your 10-digit mobile number"
         value={value.phone}
         onChangeText={(next) => update("phone", next)}
         keyboardType="phone-pad"
@@ -1480,7 +1473,7 @@ function BasicDetailsScreen({
       />
       <AuthInput
         label="Create Password"
-        placeholder="Enter a strong password"
+        placeholder="Create a password"
         value={value.password}
         onChangeText={(next) => update("password", next)}
         secureTextEntry
@@ -1501,13 +1494,13 @@ function BasicDetailsScreen({
         </Text>
       </View>
       <AuthButton
-        title={loading ? "Creating account..." : "Next"}
+        title={loading ? "Creating account..." : "Continue to phone verification"}
         onPress={onNext}
         disabled={loading}
       />
       <Text style={styles.authFooter}>
         Already have an account?{" "}
-        <Text style={styles.authLink} onPress={onBack}>
+        <Text style={styles.authLink} onPress={onSignIn}>
           Sign In
         </Text>
       </Text>
@@ -1533,38 +1526,34 @@ function OtpScreen({
   message: string | null;
 }) {
   return (
-    <AuthFrame onBack={onBack}>
+    <AuthFrame step={2} onBack={onBack}>
       <View style={styles.otpIllustration}>
         <AppIcon name="phone-portrait-outline" size={44} color={colors.info} />
         <Text style={styles.otpBubble}>OTP</Text>
       </View>
-      <Text style={styles.otpTitle}>Verify Your Mobile Number</Text>
-      <Text style={styles.authSubtitle}>We sent a 4-digit OTP to</Text>
+      <Text style={styles.otpTitle}>Verify your phone</Text>
+      <Text style={[styles.authSubtitle, { textAlign: "center", marginBottom: 8 }]}>Enter the four-digit verification code for</Text>
       <Text style={styles.otpPhoneText}>{phone}</Text>
-      <Text style={styles.authHelper}>
-        For now, use the temporary OTP shown above.
-      </Text>
       <TextInput
         style={styles.otpInput}
         value={value}
         onChangeText={(next) => onChange(next.replace(/\D/g, "").slice(0, 4))}
         keyboardType="number-pad"
         maxLength={4}
-        placeholder="1  1  1  1"
+        placeholder="• • • •"
+        accessibilityLabel="Four-digit verification code"
+        autoComplete="one-time-code"
         placeholderTextColor={colors.muted}
       />
-      {message ? <Text style={styles.authError}>{message}</Text> : null}
-      <Text style={styles.otpHint}>
-        SMS delivery will be connected after provider setup.
-      </Text>
+      {message ? <Text accessibilityRole="alert" style={message.startsWith("SMS is not available") ? styles.otpHint : styles.authError}>{message}</Text> : null}
       <AuthButton
-        title={loading ? "Verifying..." : "Verify"}
+        title={loading ? "Verifying..." : "Verify and continue"}
         onPress={onVerify}
         disabled={loading || value.length !== 4}
       />
-      <Text style={styles.authLink} onPress={onBack}>
-        Change Mobile Number
-      </Text>
+      <Pressable accessibilityRole="button" onPress={onBack} style={styles.authBackLink}>
+        <Text style={styles.authLink}>Change phone number</Text>
+      </Pressable>
     </AuthFrame>
   );
 }
@@ -1587,10 +1576,10 @@ function ProfessionalDetailsScreen({
   const update = (key: string, next: string | boolean) =>
     onChange({ ...value, [key]: next });
   return (
-    <AuthFrame step={2} onBack={onBack}>
-      <Text style={styles.authTitle}>Professional Details</Text>
+    <AuthFrame step={3} onBack={onBack}>
+      <Text style={styles.authTitle}>Professional details</Text>
       <Text style={styles.authSubtitle}>
-        Tell us about your experience and expertise.
+        Tell us about your lift service experience and preferred work locations.
       </Text>
       <AuthSelect
         label="Total Experience"
@@ -1705,7 +1694,7 @@ function ProfessionalDetailsScreen({
       />
       {message ? <Text style={styles.authError}>{message}</Text> : null}
       <AuthButton
-        title={loading ? "Saving..." : "Next"}
+        title={loading ? "Saving..." : "Continue to documents"}
         onPress={onNext}
         disabled={loading}
       />
@@ -1744,10 +1733,10 @@ function DocumentsScreen({
     ...documents,
   };
   return (
-    <AuthFrame step={3} onBack={onBack}>
-      <Text style={styles.authTitle}>Documents (Optional)</Text>
+    <AuthFrame step={4} onBack={onBack}>
+      <Text style={styles.authTitle}>Supporting documents</Text>
       <Text style={styles.authSubtitle}>
-        You can submit now and let the Admin verify documents later.
+        Upload documents that support your technician application. All uploads are optional.
       </Text>
       {DOCUMENT_LABELS.map((item) => (
         <Pressable
@@ -1771,14 +1760,13 @@ function DocumentsScreen({
       <View style={styles.infoStrip}>
         <AppIcon name="information-circle" size={18} color={colors.info} />
         <Text style={styles.infoText}>
-          Aadhaar and driving licence are recorded as numbers, not uploaded
-          documents. All file uploads are optional until Admin verification is
-          enabled.
+          You can continue without uploading files. Review your personal and
+          professional details on the next screen.
         </Text>
       </View>
       {message ? <Text style={styles.authError}>{message}</Text> : null}
       <AuthButton
-        title={loading ? "Saving..." : "Continue"}
+        title={loading ? "Saving..." : "Review application"}
         onPress={onNext}
         disabled={loading}
       />
@@ -1805,10 +1793,10 @@ function ReviewScreen({
   const docCount =
     Object.keys(documents).length || application?.documents?.length || 0;
   return (
-    <AuthFrame step={4} onBack={onBack}>
-      <Text style={styles.authTitle}>Review & Submit</Text>
+    <AuthFrame step={5} onBack={onBack}>
+      <Text style={styles.authTitle}>Review your application</Text>
       <Text style={styles.authSubtitle}>
-        Please review your details before submitting.
+        Check your details below. Go back to make changes before you submit.
       </Text>
       <ReviewCard
         title="Basic Details"
@@ -1842,11 +1830,11 @@ function ReviewScreen({
       <View style={styles.infoStrip}>
         <AppIcon name="checkmark-circle" size={18} color={colors.action} />
         <Text style={styles.infoText}>
-          I confirm that all information provided is true and correct.
+          By submitting, you confirm that the information in your application is accurate.
         </Text>
       </View>
       <AuthButton
-        title={loading ? "Submitting..." : "Submit Registration"}
+        title={loading ? "Submitting..." : "Submit application"}
         onPress={onSubmit}
         disabled={loading}
       />
@@ -1888,7 +1876,7 @@ function SubmittedScreen({
   return (
     <AuthFrame>
       <View style={styles.successIcon}><AppIcon name="checkmark" size={46} color={colors.action} /></View>
-      <Text style={styles.successTitle}>Registration Submitted!</Text>
+      <Text style={styles.successTitle}>Application submitted</Text>
       <Text style={styles.successText}>
         Thank you for registering as a Lift Technician. Your application has
         been submitted successfully.
@@ -1896,8 +1884,8 @@ function SubmittedScreen({
       <View style={styles.reviewCard}>
         <Text style={styles.reviewTitle}>Under Review</Text>
         <Text style={styles.muted}>
-          Our team will verify your details and documents. This may take 1-2
-          business days.
+          Our team will review your details and documents. You can check the
+          status of your application here.
         </Text>
       </View>
       <AuthButton
@@ -1905,7 +1893,7 @@ function SubmittedScreen({
         onPress={onStatus}
         disabled={loading}
       />
-      <AuthButton title="Go to Login" onPress={onLogin} secondary />
+      <AuthButton title="Go to sign in" onPress={onLogin} secondary />
     </AuthFrame>
   );
 }
@@ -1979,7 +1967,7 @@ function ApprovedScreen({
           <Text style={styles.uploaded}>Approved</Text>
         </View>
       </View>
-      <AuthButton title="Go to Login" onPress={onLogin} />
+      <AuthButton title="Go to sign in" onPress={onLogin} />
     </AuthFrame>
   );
 }
@@ -1992,6 +1980,7 @@ function AuthInput(
       <Text style={styles.fieldLabel}>{inputLabel}</Text>
       <TextInput
         {...rest}
+        accessibilityLabel={inputLabel}
         style={styles.authInput}
         placeholderTextColor={colors.muted}
       />
@@ -2009,20 +1998,28 @@ function AuthSelect({
   options: string[];
   onChange: (value: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
   return (
     <View style={styles.authField}>
       <Text style={styles.fieldLabel}>{inputLabel}</Text>
       <Pressable
-        style={styles.authInput}
-        onPress={() =>
-          onChange(options[(options.indexOf(value) + 1) % options.length])
-        }
+        style={[styles.authInput, styles.authSelectRow]}
+        accessibilityRole="button"
+        accessibilityLabel={`${inputLabel}: ${value || "Select an option"}`}
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen(!open)}
       >
         <Text style={value ? styles.fieldValue : styles.fieldPlaceholder}>
           {value || `Select ${inputLabel.toLowerCase()}`}
         </Text>
-        <ChevronIcon />
+        <AppIcon name={open ? "chevron-up" : "chevron-down"} size={18} color={colors.muted} />
       </Pressable>
+      {open && <View style={styles.authOptions}>
+        {options.map(option => <Pressable key={option} accessibilityRole="radio" accessibilityState={{ checked: option === value }} onPress={() => { onChange(option); setOpen(false); }} style={styles.authOption}>
+          <Text style={styles.fieldValue}>{option}</Text>
+          {option === value && <AppIcon name="checkmark" size={18} color={colors.info} />}
+        </Pressable>)}
+      </View>}
     </View>
   );
 }
@@ -2049,6 +2046,8 @@ function AuthButton({
 }) {
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !!disabled }}
       style={[
         styles.authButton,
         secondary && styles.authButtonSecondary,
@@ -2057,6 +2056,7 @@ function AuthButton({
       onPress={onPress}
       disabled={disabled}
     >
+      {!secondary && <LinearGradient colors={[colors.primary, colors.info]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }} />}
       <Text
         style={
           secondary ? styles.authButtonSecondaryText : styles.authButtonText
@@ -2076,48 +2076,29 @@ function LoginScreen({
   loading,
   message,
   onRegister,
+  onBack,
 }: {
   onLogin: (input: { email: string; password: string }) => void;
   loading: boolean;
   message: string | null;
   onRegister?: () => void;
+  onBack?: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   return (
-    <Shell>
-      <Text style={styles.logo}>VALOR</Text>
-      <Text style={styles.title}>Technician sign in</Text>
-      <Input
-        label="Email"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
-      <Input
-        label="Password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
-      {message ? <Text style={styles.errorText}>{message}</Text> : null}
-      <Pressable
-        style={[styles.primaryButton, loading && styles.disabled]}
-        disabled={loading || !email.trim() || !password}
-        onPress={() => onLogin({ email, password })}
-      >
-        <Text style={styles.primaryText}>
-          {loading ? "Signing in..." : "Sign in"}
-        </Text>
-      </Pressable>
-      <Text style={styles.authFooter}>
-        New to Valor?{" "}
-        <Text style={styles.authLink} onPress={onRegister}>
-          Create Account
-        </Text>
-      </Text>
-    </Shell>
+    <AuthFrame onBack={onBack}>
+      <View style={styles.signInHero}>
+        <View style={styles.signInIcon}><AppIcon name="construct-outline" size={34} color={colors.primary} /></View>
+        <Text style={styles.authTitle}>Sign in to your account</Text>
+        <Text style={styles.authSubtitle}>View assigned jobs, plan service visits, and keep your work up to date.</Text>
+      </View>
+      <AuthInput label="Email address" placeholder="Enter your email address" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" />
+      <AuthInput label="Password" placeholder="Enter your password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" />
+      {message ? <Text accessibilityRole="alert" style={styles.authError}>{message}</Text> : null}
+      <AuthButton title={loading ? "Signing in..." : "Sign in"} disabled={loading || !email.trim() || !password} onPress={() => onLogin({ email: email.trim(), password })} />
+      <Text style={styles.authFooter}>New to Valor? <Text style={styles.authLink} onPress={onRegister}>Create an account</Text></Text>
+    </AuthFrame>
   );
 }
 
@@ -2136,6 +2117,8 @@ function Header({ screen, onBack }: { screen: Screen; onBack: () => void }) {
       <Pressable
         disabled={!detail}
         onPress={onBack}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
         style={[styles.headerButton, detail && styles.headerIconButton]}
       >
         {detail ? (
@@ -2192,233 +2175,50 @@ function ChevronIcon() {
   return <AppIcon name="chevron-forward" size={18} color={colors.muted} />;
 }
 
-function Dashboard({
-  dashboard,
-  jobs,
-  visits,
-  loading,
-  onRefresh,
-  onJobs,
-  onJob,
-  onStartJob,
-  onNotifications,
-  onProfile,
-  onMenu,
-  onEmergency,
-  onSupport,
-  onScanQr,
-  onRequestParts,
-  onHistory,
-  onReportIssue,
-  onSafety,
-}: {
-  dashboard: TechnicianDashboard | null;
-  jobs: RequestView[];
-  visits: VisitView[];
-  loading: boolean;
-  onRefresh: () => void;
-  onJobs: () => void;
-  onJob: (job: RequestView) => void;
-  onStartJob: (job: RequestView) => void;
-  onNotifications: () => void;
-  onProfile: () => void;
-  onMenu: () => void;
-  onEmergency: () => void;
-  onSupport: () => void;
-  onScanQr: () => void;
-  onRequestParts: () => void;
-  onHistory: () => void;
-  onReportIssue: () => void;
-  onSafety: () => void;
+
+function Jobs({ items, filter, loading, onFilter, onJob, onStartJob }: {
+  items: RequestView[]; filter: number; loading: boolean;
+  onFilter: (index: number) => void; onJob: (job: RequestView) => void; onStartJob: (job: RequestView) => void;
 }) {
-  const name =
-    dashboard?.profile.email?.split("@")[0] ||
-    dashboard?.profile.employeeId ||
-    "Technician";
-  const todayJobs = todayOnly(jobs).slice(0, 3);
-  const alertCount = unreadCountFromJobs(jobs, dashboard);
-  return (
-    <ScrollView contentContainerStyle={styles.homeContent}>
-      <View style={styles.homeTop}>
-        <Pressable onPress={onMenu} style={styles.iconButton}>
-          <AppIcon name="menu-outline" size={24} color={colors.primary} />
-        </Pressable>
-        <View style={styles.valorMark}>
-          <Text style={styles.valorV}>V</Text>
-          <View>
-            <Text style={styles.logo}>VALOR</Text>
-            <Text style={styles.logoSub}>LIFT SERVICES</Text>
-          </View>
-        </View>
-        <View style={styles.homeTopActions}>
-          <Pressable onPress={onNotifications} style={styles.iconButton}>
-            <AppIcon name="notifications-outline" size={19} color={colors.primary} />
-            {alertCount > 0 ? (
-              <Text style={styles.iconBadge}>{Math.min(alertCount, 9)}</Text>
-            ) : null}
-          </Pressable>
-          <Pressable onPress={onProfile} style={styles.avatarCircle}>
-            <AppIcon name="person" size={18} color={colors.primary} />
-          </Pressable>
-        </View>
-      </View>
-      <View style={styles.heroCard}>
-        <View style={styles.heroCopy}>
-          <Text style={styles.heroKicker}>Good Morning,</Text>
-          <Text style={styles.heroTitle}>{label(name)}</Text>
-          <Text style={styles.heroMeta}>
-            Technician · {dashboard?.profile.employeeId || "Valor team"}
-          </Text>
-          <View style={styles.availability}>
-            <View style={styles.availabilityDot} />
-            <Text style={styles.availabilityText}>
-              {label(dashboard?.profile.availabilityStatus)}
-            </Text>
-            <Text style={styles.availabilityChevron}>⌄</Text>
-          </View>
-        </View>
-        <TechnicianIllustration />
-        <View style={styles.heroServiceBox}>
-          <Text style={styles.heroServiceText}>
-            Service{"\n"}Today{"\n"}Safer{"\n"}Tomorrow
-          </Text>
-        </View>
-      </View>
-      <View style={styles.homeMetrics}>
-        <HomeMetric icon="briefcase" label="Assigned\nJobs" value={dashboard?.assignedJobs} tone="blue" />
-        <HomeMetric icon="sync" label="In\nProgress" value={dashboard?.inProgressJobs} tone="amber" />
-        <HomeMetric icon="time-outline" label="Pending\nJobs" value={dashboard?.pendingJobs} tone="red" />
-        <HomeMetric icon="checkmark-circle" label="Completed\nThis Month" value={dashboard?.completedThisQuarter ?? dashboard?.completedJobs} tone="green" />
-      </View>
-      <View style={styles.homeSectionHeader}>
-        <Text style={styles.homeSectionTitle}>Today's Jobs</Text>
-        <Pressable style={styles.homeViewAllButton} onPress={onJobs}>
-          <Text style={styles.homeViewAll}>View All</Text>
-          <AppIcon name="chevron-forward" size={13} color={colors.info} />
-        </Pressable>
-      </View>
-      {loading && !dashboard ? (
-        <ActivityIndicator color={colors.info} />
-      ) : (
-        todayJobs.map((job) => (
-          <HomeJobRow key={job.id} job={job} onPress={() => onJob(job)} />
-        ))
-      )}
-      {todayJobs.length === 0 ? <Empty text="No jobs assigned for today." /> : null}
-      <View style={styles.homeDualRow}>
-        <Pressable style={styles.emergencyCard} onPress={onEmergency}>
-          <AppIcon name="alert-circle" size={24} color={colors.danger} />
-          <View style={styles.dualCopy}>
-            <Text style={styles.dualTitle}>Emergency{"\n"}Requests</Text>
-            <Text style={styles.dualText}>{dashboard?.emergencyJobs ?? 0} request received</Text>
-          </View>
-          <ChevronIcon />
-        </Pressable>
-        <Pressable style={styles.supportCard} onPress={onSupport}>
-          <AppIcon name="headset" size={24} color={colors.info} />
-          <View style={styles.dualCopy}>
-            <Text style={styles.dualTitle}>Support</Text>
-            <Text style={styles.dualText}>Contact supervisor{"\n"}for assistance</Text>
-          </View>
-          <ChevronIcon />
-        </Pressable>
-      </View>
-      <Text style={styles.homeSectionTitle}>Quick Actions</Text>
-      <View style={styles.quickGrid}>
-        <QuickAction icon="qr-code" label="Scan QR" tone="blue" onPress={onScanQr} />
-        <QuickAction icon="cube" label="Request Parts" tone="red" onPress={onRequestParts} />
-        <QuickAction icon="document-text" label="Service History" tone="green" onPress={onHistory} />
-        <QuickAction icon="warning" label="Report Issue" tone="amber" onPress={onReportIssue} />
-      </View>
-      <Pressable style={styles.safetyCard} onPress={onSafety}>
-        <View style={styles.safetyIcon}>
-          <AppIcon name="shield-checkmark" size={18} color={colors.action} />
-        </View>
-        <View style={styles.safetyCopy}>
-          <Text style={styles.safetyTitle}>Safety First</Text>
-          <Text style={styles.safetyText}>
-            Follow safety guidelines and use proper equipment at all times.
-          </Text>
-        </View>
-        <ChevronIcon />
-      </Pressable>
-    </ScrollView>
-  );
-}
-function Jobs({
-  items,
-  filter,
-  loading,
-  onFilter,
-  onJob,
-  onStartJob,
-}: {
-  items: RequestView[];
-  filter: number;
-  loading: boolean;
-  onFilter: (index: number) => void;
-  onJob: (job: RequestView) => void;
-  onStartJob: (job: RequestView) => void;
-}) {
-  const [dateFilter, setDateFilter] = useState(0);
+  const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState(DATE_FILTERS.findIndex(item => item.key === "all"));
   const [year, setYear] = useState(String(new Date().getFullYear()));
-  const [month, setMonth] = useState(String(new Date().getMonth() + 1).padStart(2, "0"));
-  const dateFiltered = filterJobsByDate(items, DATE_FILTERS[dateFilter].key, year, month);
-  return (
-    <View style={styles.contentFill}>
-      <Text style={styles.jobsTitle}>Jobs</Text>
-      <View style={styles.datePicker}>
-        <AppIcon name="calendar-outline" size={15} color={colors.info} />
-        <Text style={styles.dateText}>{DATE_FILTERS[dateFilter].label}</Text>
-        <ChevronIcon />
+  const [month, setMonth] = useState(String(new Date().getMonth() + 1));
+  const visibleJobs = filterJobsByDate(items, DATE_FILTERS[dateFilter].key, year, month).filter(job => {
+    const query = search.trim().toLowerCase();
+    const info = jobInfo(job);
+    return !query || [requestTitle(job), requestSummary(job), info.building, info.location, info.lift, label(job.status)].some(value => value.toLowerCase().includes(query));
+  });
+  return <FlatList style={{flex: 1}} contentContainerStyle={styles.jobsContent}
+    data={loading ? [] : visibleJobs} keyExtractor={item => String(item.id)} keyboardShouldPersistTaps="handled"
+    ListHeaderComponent={<View style={styles.jobHeader}>
+      <View style={styles.jobsIntro}>
+        <Text style={styles.jobsTitle}>Assigned jobs</Text>
+        <Text style={styles.jobsDescription}>Find a job, review the site details and update your progress.</Text>
       </View>
-      <FilterBar
-        labels={DATE_FILTERS.map((item) => item.label)}
-        active={dateFilter}
-        onChange={setDateFilter}
-      />
-      <View style={styles.subFilterRow}>
-        <TextInput
-          style={styles.subFilterInput}
-          value={year}
-          onChangeText={setYear}
-          keyboardType="number-pad"
-          placeholder="Year"
-          placeholderTextColor={colors.muted}
-        />
-        <TextInput
-          style={styles.subFilterInput}
-          value={month}
-          onChangeText={setMonth}
-          keyboardType="number-pad"
-          placeholder="Month"
-          placeholderTextColor={colors.muted}
-        />
+      <View style={styles.jobsSearchField}><AppIcon name="search-outline" size={20} color={colors.muted} /><TextInput accessibilityLabel="Search assigned jobs" style={styles.jobsSearchText} value={search} onChangeText={setSearch} placeholder="Search job, building or lift" placeholderTextColor={colors.muted} /></View>
+      <View style={styles.jobsFilters}>
+      <View style={styles.jobsFilterGroup}>
+        <Text style={styles.jobsFilterLabel}>Job status</Text>
+        <FilterBar labels={JOB_FILTERS.map(item => item.label)} active={filter} onChange={onFilter} wrap customerTheme />
       </View>
-      <FilterBar
-        labels={JOB_FILTERS.map((item) => item.label)}
-        active={filter}
-        onChange={onFilter}
-      />
-      {loading ? (
-        <ActivityIndicator color={colors.info} />
-      ) : (
-        <FlatList
-          data={dateFiltered}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => (
-            <AssignedJobCard
-              job={item}
-              onPress={() => onJob(item)}
-              onStart={() => onStartJob(item)}
-            />
-          )}
-          ListEmptyComponent={<Empty text="No jobs for this filter." />}
-          contentContainerStyle={styles.listContent}
-        />
-      )}
-    </View>
-  );
+      <View style={styles.jobsFilterGroup}>
+        <Text style={styles.jobsFilterLabel}>Visit date</Text>
+        <FilterBar labels={DATE_FILTERS.map(item => item.label)} active={dateFilter} onChange={setDateFilter} wrap customerTheme />
+      </View>
+      {["thisMonth", "nextMonth", "pastMonth"].includes(DATE_FILTERS[dateFilter].key) && <View style={styles.subFilterRow}>
+        <View style={{flex:1}}><Text style={styles.inputLabel}>Year</Text><TextInput style={styles.input} accessibilityLabel="Year" value={year} onChangeText={setYear} keyboardType="number-pad" /></View>
+        <View style={{flex:1}}><Text style={styles.inputLabel}>Month (1?12)</Text><TextInput style={styles.input} accessibilityLabel="Month" value={month} onChangeText={setMonth} keyboardType="number-pad" /></View>
+      </View>}
+      </View>
+      <View style={styles.jobsResultsRow}>
+        <Text style={styles.jobsResultsTitle}>Your jobs</Text>
+        <Text style={styles.jobsResultCount}>{loading ? "Loading jobs…" : `${visibleJobs.length} ${visibleJobs.length === 1 ? "job" : "jobs"} found`}</Text>
+      </View>
+    </View>}
+    renderItem={({item}) => <AssignedJobCard job={item} onPress={() => onJob(item)} onStart={() => onStartJob(item)} />}
+    ListEmptyComponent={loading ? <ActivityIndicator color={colors.info} /> : <Empty text="No jobs match these filters. Try All statuses and All dates." />}
+  />;
 }
 function History({
   items,
@@ -2439,13 +2239,11 @@ function History({
   return (
     <View style={styles.contentFill}>
       <View style={styles.screenTopRow}>
-        <View>
+        <View style={{flexGrow: 1, flexBasis: 220, minWidth: 0}}>
           <Text style={styles.jobsTitle}>Job History</Text>
-          <Text style={styles.settingsSubtitle}>View all your completed, cancelled and past jobs.</Text>
+          <Text style={styles.settingsSubtitle}>Review your assigned, completed and cancelled jobs.</Text>
         </View>
-        <Pressable style={styles.filterChipButton}>
-          <Text style={styles.refreshText}>Filter</Text>
-        </Pressable>
+        
       </View>
       <SegmentedTabs
         labels={["All", "Completed", "Cancelled", "Emergency"]}
@@ -2591,22 +2389,32 @@ function JobDetailScreen({
   if (["REACHED_SITE", "DIAGNOSIS", "REPAIR_IN_PROGRESS", "WAITING_FOR_PARTS", "TESTING"].includes(request.status)) {
     return (
       <ScrollView contentContainerStyle={styles.detailContent}>
-        <StatusHeader
-          title="Service In Progress"
-          subtitle="Our technician is working on your service request."
-          request={request}
-          callPhone={info.phone}
-        />
-        <ProgressSteps status={request.status} />
+        <ServiceReveal key={request.id}>
+          <ServiceHero status={request.status} jobId={request.serviceId || `SR-${request.id}`} building={info.building} service={label(request.serviceType)} />
+        </ServiceReveal>
+        <ServiceReveal delay={100}>
         <View style={styles.progressNotice}>
-          <Text style={styles.progressNoticeTitle}>Service in Progress</Text>
-          <Text style={styles.progressNoticeText}>Technician is working on the issue. We will notify you once it is completed.</Text>
+          <AppIcon name="construct-outline" size={22} color={colors.teal} />
+          <View style={styles.serviceFlexibleCopy}>
+            <Text style={styles.progressNoticeTitle}>{label(request.status)}</Text>
+            <Text style={styles.progressNoticeText}>Complete the checklist and record your findings before finishing the job.</Text>
+          </View>
         </View>
-        <CustomerContactCard info={info} />
-        <LocationNameCard info={info} onOpenMaps={onOpenMaps} />
-        <RouteMapCard request={request} info={info} location={jobLocation} onOpenMaps={onOpenMaps} curved />
-        <BuildingSummaryCard request={request} info={info} compact />
-        <Info title="Job Instructions" rows={[info.instructions || "Check door sensors and lubrication. Carry standard service kit."]} />
+        </ServiceReveal>
+        <ServiceReveal delay={180}>
+          <ServiceSection number="01" title="Stay connected" subtitle="Your customer, a tap away" />
+        </ServiceReveal>
+        <ServiceReveal delay={220}><CustomerContactCard info={info} /></ServiceReveal>
+        <ServiceReveal delay={260}><ServiceSection number="02" title="At the site" subtitle="Location and equipment details" /></ServiceReveal>
+        <ServiceReveal delay={300}><BuildingSummaryCard request={request} info={info} compact /></ServiceReveal>
+        <ServiceReveal delay={340}><RouteMapCard request={request} info={info} location={jobLocation} onOpenMaps={onOpenMaps} curved /></ServiceReveal>
+        <ServiceReveal delay={380}><ServiceSection number="03" title="The work ahead" subtitle="Check, record and complete" /></ServiceReveal>
+        <ServiceReveal delay={420}>
+        <View style={styles.serviceInstructionCard}>
+          <View style={styles.serviceSectionHeading}><AppIcon name="clipboard-outline" size={20} color={colors.primary} /><Text style={styles.serviceCardHeading}>Job instructions</Text></View>
+          <Text style={styles.serviceBodyText}>{info.instructions || "No additional instructions have been provided for this job."}</Text>
+        </View>
+        </ServiceReveal>
         <ChecklistPanel checklist={checklist} onSave={onChecklistSave} />
         {request.status === "REACHED_SITE" || request.status === "DIAGNOSIS" ? (
           <ArrivalOtpPanel state={arrivalOtp} onRequest={onRequestArrivalOtp} onVerify={onVerifyArrivalOtp} />
@@ -2621,11 +2429,13 @@ function JobDetailScreen({
           <Text style={styles.errorText}>Verify the customer completion OTP before completing this job.</Text>
         ) : null}
         <Pressable
-          style={[styles.primaryButton, request.status === "TESTING" && (!checklistDone || !otpDone) && styles.disabled]}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.servicePrimaryAction, pressed && styles.serviceActionPressed, request.status === "TESTING" && (!checklistDone || !otpDone) && styles.disabled]}
           disabled={request.status === "TESTING" && (!checklistDone || !otpDone)}
           onPress={() => onTransition(request.status === "TESTING" ? "COMPLETED" : "TESTING")}
         >
-          <Text style={styles.primaryText}>Completed Job</Text>
+          <Text style={styles.primaryText}>{request.status === "TESTING" ? "Complete job" : "Proceed to testing"}</Text>
+          <AppIcon name="arrow-forward" size={20} color={colors.surface} />
         </Pressable>
         <Pressable style={styles.outlineButton} onPress={() => onTransition("WAITING_FOR_PARTS")}>
           <Text style={styles.outlineText}>Request Revisit</Text>
@@ -2773,13 +2583,13 @@ function StatusHeader({
 }) {
   return (
     <View style={styles.flowHeader}>
-      <View>
+      <View style={styles.serviceFlexibleCopy}>
         <Text style={styles.jobsTitle}>{title}</Text>
-        <Text style={styles.settingsSubtitle}>{subtitle}</Text>
+        <Text style={styles.serviceBodyText}>{subtitle}</Text>
       </View>
       <View style={styles.flowHeaderRight}>
         <Badge text={label(request.status)} tone="info" />
-        <Text style={styles.detailId}>Job ID: {request.serviceId || `SR-${request.id}`}</Text>
+        <Text selectable style={styles.serviceJobId}>Job ID: {request.serviceId || `SR-${request.id}`}</Text>
         {phone ? (
           <Pressable style={styles.callCircle} onPress={() => callPhone(phone)}>
             <Text style={styles.callCircleText}>Call</Text>
@@ -2809,8 +2619,8 @@ function ProgressSteps({ status }: { status: RequestStatus }) {
     <View style={styles.stepTracker}>
       {steps.map((step, index) => (
         <View key={step.label} style={styles.flowStepItem}>
-          <View style={[styles.stepBubble, index <= active && styles.stepBubbleActive]}>
-            <Text style={styles.stepBubbleText}>{index <= active ? "✓" : ""}</Text>
+          <View style={[styles.stepBubble, index < active && styles.stepBubbleActive, index === active && styles.stepBubbleCurrent]}>
+            {index < active ? <AppIcon name="checkmark" size={18} color={colors.surface} /> : <Text style={[styles.stepNumber, index === active && styles.stepBubbleText]}>{index + 1}</Text>}
           </View>
           <Text style={[styles.flowStepText, index === active && styles.flowStepTextActive]}>
             {step.label}
@@ -2836,15 +2646,14 @@ function BuildingSummaryCard({
         <AppIcon name="business-outline" size={34} color={colors.primary} />
       </View>
       <View style={styles.buildingCopy}>
-        <View style={styles.rowBetween}>
+        <View style={styles.serviceBuildingHeading}>
           <Text style={styles.buildingTitle}>{info.building}</Text>
           <Badge text={label(request.serviceType)} tone={request.priority === "EMERGENCY" ? "danger" : "info"} />
         </View>
         <Text style={styles.assignedMeta}>{info.location}</Text>
         <Text style={styles.assignedMeta}>{info.lift}</Text>
-        <Text style={styles.assignedMeta}>{info.persons} | Schindler</Text>
+        <Text style={styles.assignedMeta}>{info.persons}</Text>
       </View>
-      <ChevronIcon />
     </View>
   );
 }
@@ -2908,14 +2717,17 @@ function RouteMapCard({
   curved?: boolean;
 }) {
   return (
-    <Pressable style={styles.routeMap} onPress={onOpenMaps}>
-      <Text style={styles.mapChipLeft}>Your Location</Text>
-      <Text style={styles.mapBlueDot}>●</Text>
-      <View style={[styles.routeLine, curved && styles.routeLineDotted]} />
-      <Text style={styles.mapRedPin}>●</Text>
-      <Text style={styles.mapChipRight}>{info.building}</Text>
-      <Text style={styles.mapCity}>{fieldText(request as Record<string, unknown>, ["area", "city"]) || "Banjara Hills"}</Text>
-      <Text style={styles.mapCorner}>◎</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Open directions to ${info.building}`} style={styles.serviceDirectionsCard} onPress={onOpenMaps}>
+      <View style={styles.serviceSectionHeading}>
+        <View style={styles.serviceLocationIcon}><AppIcon name="navigate-outline" size={24} color={colors.primary} /></View>
+        <View style={styles.serviceFlexibleCopy}>
+          <Text style={styles.serviceCardHeading}>Site directions</Text>
+          <Text style={styles.serviceBodyText}>{info.location}</Text>
+        </View>
+        <AppIcon name="arrow-forward" size={22} color={colors.primary} />
+      </View>
+      <Text style={styles.serviceBodyText}>{location?.route?.available ? "Open Maps to view the route to this site." : "Open the site location in your maps app."}</Text>
+      <Text style={styles.serviceDirectionsLink}>Open directions</Text>
     </Pressable>
   );
 }
@@ -2935,16 +2747,18 @@ function CustomerContactCard({ info }: { info: ReturnType<typeof jobInfo> }) {
       <View style={styles.profileAvatarSmall}>
         <AppIcon name="person" size={22} color={colors.info} />
       </View>
-      <View style={styles.homeJobCopy}>
+      <View style={styles.serviceContactCopy}>
         <Text style={styles.detailRowLabel}>Customer</Text>
         <Text style={styles.buildingTitle}>{info.customer}</Text>
       </View>
-      <Pressable style={styles.callCircle} onPress={() => callPhone(info.phone)}>
-        <Text style={styles.callCircleText}>Call</Text>
-      </Pressable>
-      <Pressable style={styles.callCircle} onPress={() => messagePhone(info.phone)}>
-        <Text style={styles.callCircleText}>Msg</Text>
-      </Pressable>
+      <View style={styles.serviceContactActions}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Call customer" style={({ pressed }) => [styles.serviceContactButton, pressed && styles.serviceActionPressed]} onPress={() => callPhone(info.phone)}>
+          <AppIcon name="call-outline" size={18} color={colors.primary} /><Text style={styles.serviceActionText}>Call</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Message customer" style={({ pressed }) => [styles.serviceContactButton, pressed && styles.serviceActionPressed]} onPress={() => messagePhone(info.phone)}>
+          <AppIcon name="chatbubble-outline" size={18} color={colors.primary} /><Text style={styles.serviceActionText}>Message</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -2965,7 +2779,7 @@ function LocationNameCard({
         <Text style={styles.buildingTitle}>{info.building}</Text>
         <Text style={styles.assignedMeta}>{info.location}</Text>
       </View>
-      <Pressable style={styles.viewButton} onPress={onOpenMaps}>
+      <Pressable accessibilityRole="button" style={styles.serviceMapButton} onPress={onOpenMaps}>
         <Text style={styles.viewButtonText}>View on Map</Text>
       </Pressable>
     </View>
@@ -3040,62 +2854,7 @@ function CompletedJobView({
   );
 }
 
-function ArrivalOtpPanel({
-  state,
-  onRequest,
-  onVerify,
-}: {
-  state: ArrivalOtpState | null;
-  onRequest: () => Promise<void>;
-  onVerify: (otpId: number, otp: string) => Promise<void>;
-}) {
-  const [otp, setOtp] = useState("");
-  return (
-    <View style={styles.otpPanel}>
-      <Text style={styles.detailSectionTitle}>Arrival verification</Text>
-      <Text style={styles.muted}>
-        Ask the customer for the arrival OTP shown in their Valor app. Verify it
-        before starting the service.
-      </Text>
-      {state ? (
-        <Badge
-          text={label(state.status)}
-          tone={state.status === "VERIFIED" ? "info" : "muted"}
-        />
-      ) : null}
-      {state?.status !== "VERIFIED" ? (
-        <>
-          <Pressable style={styles.outlineButton} onPress={onRequest}>
-            <Text style={styles.outlineText}>
-              {state ? "Send OTP Again" : "Request Arrival OTP"}
-            </Text>
-          </Pressable>
-          {state ? (
-            <>
-              <Input
-                label="Customer arrival OTP"
-                value={otp}
-                onChangeText={setOtp}
-                keyboardType="number-pad"
-              />
-              <Pressable
-                style={styles.primaryButton}
-                disabled={otp.length < 4}
-                onPress={() => onVerify(state.id, otp)}
-              >
-                <Text style={styles.primaryText}>Verify Arrival OTP</Text>
-              </Pressable>
-            </>
-          ) : null}
-        </>
-      ) : (
-        <Text style={styles.successHint}>
-          Arrival verified. You can continue the job.
-        </Text>
-      )}
-    </View>
-  );
-}
+const ArrivalOtpPanel = ArrivalVerification;
 
 function CashPaymentPanel({
   payment,
@@ -3169,12 +2928,10 @@ function ChecklistPanel({
   }, [checklist?.id, checklist?.updatedAt]);
   if (!checklist)
     return (
-      <Info
-        title="Checklist"
-        rows={[
-          "No active checklist template is assigned for this service type.",
-        ]}
-      />
+      <View style={styles.workPanel}>
+        <View style={styles.serviceSectionHeading}><View style={styles.verificationIcon}><AppIcon name="list-outline" size={24} color={colors.primary} /></View><View style={styles.serviceFlexibleCopy}><Text style={styles.panelEyebrow}>SERVICE CHECKS</Text><Text style={styles.serviceCardHeading}>Checklist</Text></View><Text style={styles.panelTag}>Not assigned</Text></View>
+        <View style={styles.checklistEmpty}><Text style={styles.serviceBodyText}>No checklist has been assigned for this service type.</Text></View>
+      </View>
     );
   const update = (
     id: number,
@@ -3187,8 +2944,8 @@ function ChecklistPanel({
     valueText: draft[item.id]?.valueText,
   }));
   return (
-    <View style={styles.card}>
-      <View style={styles.rowBetween}>
+    <View style={styles.workPanel}>
+      <View style={styles.checklistHeading}>
         <Text style={styles.sectionHeading}>{checklist.templateName}</Text>
         <Badge
           text={`${checklist.requiredCompleted}/${checklist.requiredTotal} required`}
@@ -3198,14 +2955,15 @@ function ChecklistPanel({
       {checklist.items.map((item) => (
         <View key={item.id} style={styles.checkRow}>
           <Pressable
-            style={styles.checkBox}
+            accessibilityRole="checkbox"
+            accessibilityLabel={item.label}
+            accessibilityState={{ checked: !!draft[item.id]?.checked }}
+            style={[styles.checkBox, draft[item.id]?.checked && styles.checklistChecked]}
             onPress={() =>
               update(item.id, { checked: !draft[item.id]?.checked })
             }
           >
-            <Text style={styles.outlineText}>
-              {draft[item.id]?.checked ? "OK" : ""}
-            </Text>
+            {draft[item.id]?.checked && <AppIcon name="checkmark" size={18} color={colors.surface} />}
           </Pressable>
           <View style={styles.checkCopy}>
             <Text style={styles.cardTitle}>
@@ -3435,16 +3193,16 @@ function Notifications({
     if (filter === "System") return group === "System";
     return group !== "Jobs" && group !== "Emergency" && group !== "Messages";
   });
-  const grouped = variant === "notifications" ? groupNotificationItems(items) : [{title: "", items}];
+  const grouped = variant === "notifications" ? groupNotificationItems(items) : items.length ? [{title: "", items}] : [];
   return (
     <View style={styles.contentFill}>
       <View style={styles.screenTopRow}>
-        <View>
+        <View style={{flexGrow: 1, flexBasis: 220, minWidth: 0}}>
           <Text style={styles.jobsTitle}>{variant === "alerts" ? "Alerts & Messages" : "Notifications"}</Text>
           <Text style={styles.settingsSubtitle}>Stay updated with your jobs, alerts and important information.</Text>
         </View>
         <Pressable style={styles.filterChipButton} onPress={variant === "alerts" ? onMarkAll : onRefresh}>
-          <Text style={styles.refreshText}>{variant === "alerts" ? "Mark All Read" : "Notification Settings"}</Text>
+          <Text style={styles.refreshText}>{variant === "alerts" ? "Mark All Read" : "Refresh"}</Text>
         </Pressable>
       </View>
       <SegmentedTabs labels={filters} active={Math.max(0, filters.indexOf(filter))} onChange={(index) => setFilter(filters[index])} />
@@ -3477,7 +3235,7 @@ function Profile({
   onLogout: () => void;
 }) {
   const name =
-    profile?.email?.split("@")[0] || profile?.employeeId || "Technician";
+    profile?.email?.split("@")[0].replace(/^tech[._-]/i, "").replace(/[._-]+/g, " ") || profile?.employeeId || "Technician";
   const row = (
     icon: IoniconName,
     title: string,
@@ -3514,8 +3272,8 @@ function Profile({
       </View>
       <Text style={styles.settingsSection}>Account Settings</Text>
       {row("person-outline", "Personal Information", "Manage your personal details", "profileDetails")}
-      {row("lock-closed-outline", "Change Password", "Update your password securely", "profilePassword")}
-      {row("notifications-outline", "Notifications", "Manage your notification preferences", "profileNotifications")}
+      {row("lock-closed-outline", "Password Support", "Request a password reset", "profilePassword")}
+      {row("notifications-outline", "Notifications", "View job updates and alerts", "profileNotifications")}
       {row("language-outline", "Language", "Choose your preferred language", "profileLanguage")}
       <Text style={styles.settingsSection}>App Settings</Text>
       {row("location-outline", "Location Services", "Allow location access for job tracking", "profileLocation")}
@@ -3530,85 +3288,47 @@ function Profile({
     </ScrollView>
   );
 }
-function ProfileDetailsPage({
-  profile,
-  onSave,
-}: {
-  profile: TechnicianProfileView | null;
-  onSave: (input: Partial<TechnicianProfileView>) => Promise<void>;
-}) {
+function ProfileDetailsPage({ profile, onSave }: { profile: TechnicianProfileView | null; onSave: (input: Partial<TechnicianProfileView>) => Promise<void> }) {
   const [draft, setDraft] = useState<Partial<TechnicianProfileView>>(profile ?? {});
-  const update = (key: keyof TechnicianProfileView, value: string) =>
-    setDraft((current) => ({ ...current, [key]: value }));
-  return (
-    <ScrollView contentContainerStyle={styles.profileContent}>
-      <Text style={styles.jobsTitle}>Personal Information</Text>
-      <Text style={styles.settingsSubtitle}>View and update your personal details</Text>
-      <View style={styles.profileHeaderCard}>
-        <View style={styles.profilePhotoLarge}><AppIcon name="person" size={28} color={colors.info} /></View>
-        <View style={styles.profileCopy}>
-          <Text style={styles.profileName}>{label(profile?.email?.split("@")[0] || "Ramesh Kumar")}</Text>
-          <Text style={styles.profileEmail}>{profile?.specialization || "Technician"}</Text>
-          <Text style={styles.profilePhone}>{profile?.employeeId || "EMP001"}</Text>
-        </View>
-        <Pressable style={styles.changePhotoButton}><Text style={styles.viewButtonText}>Change Photo</Text></Pressable>
-      </View>
-      <Text style={styles.settingsSection}>Basic Information</Text>
-      <View style={styles.twoColumnForm}>
-        <ProfileField label="Full Name" value={String(draft.email?.split("@")[0] || "Ramesh Kumar")} onChangeText={() => undefined} />
-        <ProfileField label="Employee ID" value={profile?.employeeId || "EMP001"} disabled />
-        <ProfileField label="Date of Birth" value={String(draft.dateOfBirth ?? "15 Mar 1995")} onChangeText={(text) => update("dateOfBirth", text)} />
-        <ProfileField label="Gender" value={String(draft.gender ?? "Male")} onChangeText={(text) => update("gender", text)} />
-        <ProfileField label="Phone Number" value={profile?.phone || "+91 98765 43210"} disabled />
-        <ProfileField label="Email Address" value={profile?.email || "ramesh.kumar@valorifts.com"} disabled />
-      </View>
-      <Text style={styles.settingsSection}>Address Information</Text>
-      <View style={styles.formCardSoft}>
-        <ProfileField wide label="Address" value={String(draft.address ?? "H.No. 12-3-45, Sri Sai Nagar, Bandlaguda, Hyderabad")} onChangeText={(text) => update("address", text)} />
-        <View style={styles.twoColumnFormInner}>
-          <ProfileField label="City" value="Hyderabad" />
-          <ProfileField label="State" value="Telangana" />
-          <ProfileField label="Pincode" value="500008" />
-          <ProfileField label="Country" value="India" />
-        </View>
-      </View>
-      <Text style={styles.settingsSection}>Emergency Contact</Text>
-      <View style={styles.twoColumnForm}>
-        <ProfileField label="Contact Name" value={String(draft.emergencyContactName ?? "Suresh Kumar")} onChangeText={(text) => update("emergencyContactName", text)} />
-        <ProfileField label="Relationship" value="Brother" />
-        <ProfileField label="Phone Number" value={String(draft.emergencyContactPhone ?? "+91 99876 54321")} onChangeText={(text) => update("emergencyContactPhone", text)} />
-        <ProfileField label="Alternate Number" value="+91 90000 11122" />
-      </View>
-      <Pressable style={styles.primaryButton} onPress={() => onSave(draft)}><Text style={styles.primaryText}>Save Changes</Text></Pressable>
-    </ScrollView>
-  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const update = (key: keyof TechnicianProfileView, value: string) => setDraft(current => ({...current, [key]: value}));
+  const save = async () => {
+    setSaving(true); setError(null);
+    try { await onSave({dateOfBirth: draft.dateOfBirth || null, gender: draft.gender || null, address: draft.address || null, emergencyContactName: draft.emergencyContactName || null, emergencyContactPhone: draft.emergencyContactPhone || null}); }
+    catch (problem) { setError(err(problem)); } finally { setSaving(false); }
+  };
+  return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.profileContent}>
+    <Text style={styles.jobsTitle}>Personal information</Text>
+    <Text style={styles.settingsSubtitle}>Keep your contact information current. Contact your administrator to change account details.</Text>
+    <Text style={styles.settingsSection}>Account details</Text>
+    <View style={styles.twoColumnForm}>
+      <ProfileField label="Employee ID" value={profile?.employeeId || "Not provided"} disabled />
+      <ProfileField label="Phone number" value={profile?.phone || "Not provided"} disabled />
+      <ProfileField label="Email address" value={profile?.email || "Not provided"} disabled />
+      <ProfileField label="Assigned area" value={profile?.assignedArea || "Not assigned"} disabled />
+    </View>
+    <Text style={styles.settingsSection}>Personal details</Text>
+    <View style={styles.twoColumnForm}>
+      <ProfileField label="Date of birth (YYYY-MM-DD)" value={draft.dateOfBirth || ""} onChangeText={text => update("dateOfBirth", text)} />
+      <ProfileField label="Gender (optional)" value={draft.gender || ""} onChangeText={text => update("gender", text)} />
+      <ProfileField wide label="Address" value={draft.address || ""} onChangeText={text => update("address", text)} />
+    </View>
+    <Text style={styles.settingsSection}>Emergency contact</Text>
+    <View style={styles.twoColumnForm}>
+      <ProfileField label="Contact name" value={draft.emergencyContactName || ""} onChangeText={text => update("emergencyContactName", text)} />
+      <ProfileField label="Contact phone" value={draft.emergencyContactPhone || ""} onChangeText={text => update("emergencyContactPhone", text)} />
+    </View>
+    {error && <Text accessibilityRole="alert" style={styles.errorText}>{error}</Text>}
+    <Pressable accessibilityRole="button" disabled={saving} style={[styles.greenButton, saving && styles.disabled]} onPress={save}><Text style={styles.primaryText}>{saving ? "Saving?" : "Save changes"}</Text></Pressable>
+  </ScrollView>;
 }
 function ProfilePasswordPage({ onDone }: { onDone: () => void }) {
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [confirm, setConfirm] = useState("");
-  return (
-    <ScrollView contentContainerStyle={styles.profileContent}>
-      <Text style={styles.jobsTitle}>Change Password</Text>
-      <Text style={styles.settingsSubtitle}>For your security, please enter your current password and set a new one.</Text>
-      <View style={styles.securityCardBlue}>
-        <View style={styles.securityLock}><AppIcon name="lock-closed" size={24} color={colors.surface} /></View>
-        <View style={styles.profileCopy}>
-          <Text style={styles.cardTitle}>Keep your account secure</Text>
-          <Text style={styles.muted}>Use a strong password that you don't use on other websites.</Text>
-        </View>
-      </View>
-      <PasswordInput label="Current Password" value={current} onChangeText={setCurrent} placeholder="Enter your current password" />
-      <PasswordInput label="New Password" value={next} onChangeText={setNext} placeholder="Enter your new password" />
-      <PasswordInput label="Confirm New Password" value={confirm} onChangeText={setConfirm} placeholder="Re-enter your new password" />
-      <View style={styles.passwordRulesCard}>
-        <Text style={styles.cardTitle}>Password must contain:</Text>
-        {["At least 8 characters", "At least one uppercase letter", "At least one lowercase letter", "At least one number", "At least one special character"].map((item) => <Text key={item} style={styles.ruleText}>○ {item}</Text>)}
-      </View>
-      <Pressable style={styles.primaryButton} onPress={onDone}><Text style={styles.primaryText}>Update Password</Text></Pressable>
-      <Pressable style={styles.outlineButton}><Text style={styles.outlineText}>Cancel</Text></Pressable>
-    </ScrollView>
-  );
+  return <ScrollView contentContainerStyle={styles.profileContent}>
+    <Text style={styles.jobsTitle}>Password support</Text>
+    <View style={styles.card}><AppIcon name="lock-closed-outline" size={32} color={colors.info} /><Text style={styles.sectionHeading}>Keep your account secure</Text><Text style={styles.muted}>Technician password changes are managed by Valor support. Contact your administrator with your employee ID to request a password reset.</Text></View>
+    <Text style={styles.muted}>Never share your password or customer verification codes with anyone.</Text>
+  </ScrollView>;
 }
 function HelpPage() {
   const [query, setQuery] = useState("");
@@ -3798,9 +3518,15 @@ function ActionModal({
       onRequestClose={onClose}
       transparent
     >
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modal}>
-          <Text style={styles.sectionHeading}>{modalTitle(mode)}</Text>
+      <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <View style={styles.modal} accessibilityViewIsModal>
+          <View style={styles.sheetHandle} />
+          <LinearGradient colors={["#082A55", "#16487B"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.sheetHero}>
+            <View style={styles.sheetHeroTop}><View style={styles.sheetIcon}><AppIcon name={mode === "transition" ? "checkmark-circle-outline" : "create-outline"} size={26} color="#FFFFFF" /></View><Text style={styles.sheetEyebrow}>VALOR · JOB UPDATE</Text><Pressable accessibilityRole="button" accessibilityLabel="Close dialog" disabled={saving} onPress={onClose} style={styles.sheetClose}><AppIcon name="close" size={22} color="#FFFFFF" /></Pressable></View>
+            <Text style={styles.sheetTitle}>{modalTitle(mode)}</Text>
+            <Text style={styles.sheetDescription}>{mode === "transition" ? "Add your notes and confirm the next step for this job." : "Review the details below before saving your update."}</Text>
+          </LinearGradient>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.sheetForm}>
           {mode === "attachment" || mode === "privateAttachment" ? (
             <>
               <Text style={styles.muted}>
@@ -3840,9 +3566,13 @@ function ActionModal({
             </>
           ) : (
             fields.map((field) => (
-              <Input
-                key={field}
-                label={label(field)}
+              <View key={field} style={styles.sheetField}>
+              <Text style={styles.panelFieldLabel}>{label(field)}</Text>
+              <TextInput
+                accessibilityLabel={label(field)}
+                style={[styles.sheetInput, /notes|reason|diagnosis|work/.test(field) && styles.sheetTextarea]}
+                placeholder={`Enter ${label(field).toLowerCase()}`}
+                placeholderTextColor={colors.muted}
                 value={values[field] ?? ""}
                 onChangeText={(text) =>
                   setValues((current) => ({ ...current, [field]: text }))
@@ -3854,18 +3584,22 @@ function ActionModal({
                   field.includes("work")
                 }
               />
+              </View>
             ))
           )}
-          <View style={styles.actions}>
+          </ScrollView>
+          <View style={styles.sheetActions}>
             <Pressable
-              style={styles.outlineButton}
+              accessibilityRole="button"
+              style={styles.sheetCancel}
               disabled={saving}
               onPress={onClose}
             >
               <Text style={styles.outlineText}>Cancel</Text>
             </Pressable>
             <Pressable
-              style={[styles.primaryButton, saving && styles.disabled]}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.sheetSubmit, saving && styles.disabled, pressed && styles.serviceActionPressed]}
               disabled={saving}
               onPress={async () => {
                 setSaving(true);
@@ -3879,12 +3613,13 @@ function ActionModal({
               }}
             >
               <Text style={styles.primaryText}>
-                {saving ? "Saving..." : "Submit"}
+                {saving ? "Saving..." : mode === "transition" ? "Confirm update" : "Save details"}
               </Text>
+              {saving ? <ActivityIndicator size="small" color={colors.surface} /> : <AppIcon name="arrow-forward" size={18} color={colors.surface} />}
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -3979,11 +3714,22 @@ function FilterBar({
   labels,
   active,
   onChange,
+  wrap = false,
+  customerTheme = false,
 }: {
   labels: string[];
   active: number;
   onChange: (index: number) => void;
+  wrap?: boolean;
+  customerTheme?: boolean;
 }) {
+  if (wrap) return <View style={styles.filterWrap}>{labels.map((item, index) => <Pressable
+    key={item}
+    accessibilityRole="button"
+    accessibilityState={{ selected: active === index }}
+    style={[styles.filter, styles.filterWrappedItem, active === index && styles.selected, customerTheme && styles.jobsFilterChip, customerTheme && active === index && styles.jobsFilterSelected]}
+    onPress={() => onChange(index)}
+  ><Text style={[styles.outlineText, customerTheme && styles.jobsFilterText, customerTheme && active === index && styles.jobsFilterSelectedText]}>{item}</Text></Pressable>)}</View>;
   return (
     <ScrollView
       horizontal
@@ -4062,7 +3808,7 @@ function HomeMetric({
   icon: IoniconName;
   label: string;
   value?: number;
-  tone: "blue" | "amber" | "red" | "green";
+  tone: "blue" | "teal" | "amber" | "red" | "green";
 }) {
   return (
     <View style={styles.homeMetric}>
@@ -4072,6 +3818,8 @@ function HomeMetric({
         color={
           tone === "amber"
             ? colors.warn
+            : tone === "teal"
+              ? colors.teal
             : tone === "red"
               ? colors.danger
               : tone === "green"
@@ -4136,48 +3884,46 @@ function AssignedJobCard({
   const info = jobInfo(job);
   const canStart = job.status === "ASSIGNED" || job.status === "ACCEPTED";
   return (
-    <Pressable style={styles.assignedCardLarge} onPress={onPress}>
-      <View style={styles.assignedTopRow}>
-        <View style={styles.buildingThumb}>
+    <View style={styles.assignedCardLarge}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`View job at ${info.building}`} onPress={onPress} style={styles.assignedTopRow}>
+        <View style={styles.jobsBuildingThumb}>
           <AppIcon name="business-outline" size={34} color={colors.primary} />
         </View>
         <View style={styles.assignedCopy}>
-          <View style={styles.rowBetween}>
-            <Text style={styles.assignedTitle}>{info.building}</Text>
-            <Badge
-              text={label(job.serviceType)}
-              tone={job.priority === "EMERGENCY" ? "danger" : "info"}
-            />
-          </View>
+          <Text style={styles.assignedTitle}>{info.building}</Text>
           <Text style={styles.assignedMeta}>{info.location}</Text>
           <Text style={styles.assignedMeta}>{info.lift}</Text>
-          <Text style={styles.assignedMeta}>{info.persons} | Schindler</Text>
+          <Text style={styles.assignedMeta}>{info.persons}</Text>
         </View>
-        <View style={styles.assignedTimeBox}>
-          <Text style={styles.assignedTime}>{job.preferredTimeSlot || "Time pending"}</Text>
+      </Pressable>
+      <View style={styles.jobStatusRow}>
+        <View style={styles.jobsService}>
+          <AppIcon name="construct-outline" size={17} color={colors.info} />
+          <Text style={styles.assignedServiceText}>{label(job.serviceType)}</Text>
+        </View>
+        <View style={[styles.jobsStatusBadge, job.status === "COMPLETED" && styles.jobsStatusSuccess, job.priority === "EMERGENCY" && styles.jobsStatusEmergency]}>
+          <Text style={[styles.jobsStatusText, job.status === "COMPLETED" && styles.jobsStatusSuccessText, job.priority === "EMERGENCY" && styles.jobsStatusEmergencyText]}>{label(job.status)}</Text>
         </View>
       </View>
+      <View style={styles.assignedTimeBox}>
+        <AppIcon name="time-outline" size={17} color={colors.muted} />
+        <Text style={styles.assignedTime}>{job.preferredTimeSlot || "Visit time not scheduled"}</Text>
+      </View>
       <View style={styles.assignedBottomRow}>
-        <View style={styles.serviceMini}>
-          <AppIcon name="construct-outline" size={15} color={colors.info} />
-          <View>
-            <Text style={styles.detailRowLabel}>Service Type</Text>
-            <Text style={styles.assignedServiceText}>{label(job.serviceType)}</Text>
-          </View>
-        </View>
-        <Pressable style={styles.viewButton} onPress={onPress}>
+        <Pressable accessibilityRole="button" style={styles.viewButton} onPress={onPress}>
           <Text style={styles.viewButtonText}>View Details</Text>
         </Pressable>
         <Pressable
+          accessibilityRole="button"
           style={[styles.startButton, !canStart && styles.upcomingButton]}
           onPress={canStart ? onStart : onPress}
         >
           <Text style={[styles.startButtonText, !canStart && styles.upcomingButtonText]}>
-            {canStart ? "Start Job" : job.status === "COMPLETED" ? "Completed" : "Upcoming"}
+            {canStart ? "Start Job" : job.status === "COMPLETED" ? "Completed" : IN_PROGRESS.includes(job.status) ? "Continue Job" : "View Status"}
           </Text>
         </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -4287,6 +4033,10 @@ function SectionTitle({
 function Empty({ text }: { text: string }) {
   return (
     <View style={styles.empty}>
+      <View style={styles.emptyIcon}>
+        <AppIcon name="file-tray-outline" size={24} color={colors.info} />
+      </View>
+      <Text style={styles.emptyTitle}>Nothing to show yet</Text>
       <Text style={styles.muted}>{text}</Text>
     </View>
   );
@@ -4597,9 +4347,7 @@ function SupportPage({ profile }: { profile: TechnicianProfileView | null }) {
           "Share job ID, location, lift ID, and safety risk before escalation.",
         ]}
       />
-      <Pressable style={styles.primaryButton}>
-        <Text style={styles.primaryText}>Contact Supervisor</Text>
-      </Pressable>
+      <Text style={styles.muted}>Use the supervisor contact provided by your dispatcher. Keep your employee ID and job number ready.</Text>
     </ScrollView>
   );
 }
@@ -4609,10 +4357,9 @@ function DeferredActionPage({ title }: { title: string }) {
     <View style={styles.contentFill}>
       <Text style={styles.jobsTitle}>{title}</Text>
       <View style={styles.empty}>
-        <Text style={styles.cardTitle}>Deferred for now</Text>
+        <Text style={styles.cardTitle}>Not available yet</Text>
         <Text style={styles.muted}>
-          This action is intentionally parked until the backend contract is
-          connected.
+          This feature is not available yet. Open your assigned job details or contact your supervisor for assistance.
         </Text>
       </View>
     </View>
@@ -4665,18 +4412,22 @@ function ReportsPage({
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.jobsTitle}>Reports</Text>
-      <View style={styles.homeMetrics}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.homeMetrics}
+      >
         <HomeMetric icon="checkmark-circle" label="Completed" value={dashboard?.completedJobs} tone="green" />
-        <HomeMetric icon="sync" label="In Progress" value={dashboard?.inProgressJobs} tone="amber" />
-        <HomeMetric icon="time-outline" label="Pending" value={dashboard?.pendingJobs} tone="red" />
-      </View>
+        <HomeMetric icon="sync" label="In Progress" value={dashboard?.inProgressJobs} tone="teal" />
+        <HomeMetric icon="time-outline" label="Pending" value={dashboard?.pendingJobs} tone="amber" />
+      </ScrollView>
       <Pressable style={styles.card} onPress={onHistory}>
         <Text style={styles.cardTitle}>Service History</Text>
         <Text style={styles.muted}>{jobs.length} recent jobs available.</Text>
       </Pressable>
       <Pressable style={styles.card} onPress={onIssue}>
-        <Text style={styles.cardTitle}>Report Issue</Text>
-        <Text style={styles.muted}>Create a supervisor-facing issue note.</Text>
+        <Text style={styles.cardTitle}>Work reports</Text>
+        <Text style={styles.muted}>Open an assigned job to record your diagnosis, completed work and testing results.</Text>
       </Pressable>
     </ScrollView>
   );
@@ -4684,23 +4435,37 @@ function ReportsPage({
 
 function BottomNav({
   screen,
+  unreadCount,
   onChange,
 }: {
   screen: Screen;
+  unreadCount: number;
   onChange: (screen: Screen) => void;
 }) {
-  const items: Array<{ screen: Screen; label: string; icon: IoniconName; badge?: number }> = [
-    { screen: "dashboard", label: "Home", icon: "home-outline" },
-    { screen: "jobs", label: "Jobs", icon: "briefcase-outline" },
-    { screen: "notifications", label: "Alerts", icon: "notifications-outline", badge: 3 },
-    { screen: "reports", label: "Reports", icon: "bar-chart-outline" },
-    { screen: "profile", label: "Profile", icon: "person-outline" },
-  ];
+  const navItems: Record<
+    (typeof TECHNICIAN_PRIMARY_NAV)[number],
+    { label: string; icon: IoniconName; badge?: number }
+  > = {
+    dashboard: { label: "Home", icon: "home-outline" },
+    jobs: { label: "Jobs", icon: "briefcase-outline" },
+    visits: { label: "Visits", icon: "calendar-outline" },
+    notifications: { label: "Alerts", icon: "notifications-outline", badge: unreadCount },
+    history: { label: "History", icon: "time-outline" },
+    profile: { label: "Profile", icon: "person-outline" },
+  };
+  const items = TECHNICIAN_PRIMARY_NAV.map((screen) => ({
+    screen,
+    ...navItems[screen],
+  }));
+  const activeScreen = screen === "reports" ? "dashboard" : screen;
   return (
     <View style={styles.nav}>
       {items.map((item) => (
         <Pressable
           key={item.screen}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeScreen === item.screen }}
+          accessibilityLabel={item.label}
           style={styles.navItem}
           onPress={() => onChange(item.screen)}
         >
@@ -4708,12 +4473,12 @@ function BottomNav({
             <AppIcon
               name={item.icon}
               size={21}
-              color={screen === item.screen ? colors.info : colors.muted}
+              color={activeScreen === item.screen ? colors.info : colors.muted}
             />
-            {item.badge ? <Text style={styles.navBadge}>{item.badge}</Text> : null}
+            {item.badge ? <Text style={styles.navBadge}>{item.badge > 9 ? "9+" : item.badge}</Text> : null}
           </View>
           <Text
-            style={[styles.navText, screen === item.screen && styles.navActive]}
+            style={[styles.navText, activeScreen === item.screen && styles.navActive]}
           >
             {item.label}
           </Text>
@@ -4739,1729 +4504,3 @@ function Input(
   );
 }
 
-const colors = {
-  background: "#F6F8FB",
-  surface: "#FFFFFF",
-  text: "#102033",
-  muted: "#66758A",
-  primary: "#082A55",
-  action: "#168A4A",
-  info: "#246DE3",
-  border: "#DDE5EF",
-  danger: "#D64545",
-  warn: "#F59E0B",
-  yellow: "#F6A800",
-};
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0 },
-  app: { flex: 1 },
-  center: { flex: 1, justifyContent: "center", padding: 24, gap: 14 },
-  header: {
-    height: 56,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  headerButton: { width: 60, minHeight: 44, alignItems: "center", justifyContent: "center" },
-  headerIconButton: { borderRadius: 22 },
-  logo: {
-    fontSize: 18,
-    fontWeight: "900",
-    letterSpacing: 3,
-    color: colors.primary,
-  },
-  content: { padding: 16, paddingBottom: 96, gap: 10 },
-  contentFill: { flex: 1, padding: 16, paddingBottom: 86 },
-  pageHeading: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 10,
-    marginBottom: 8,
-  },
-  refreshButton: {
-    borderWidth: 1,
-    borderColor: colors.info,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  refreshText: { fontSize: 11, color: colors.info, fontWeight: "900" },
-  listContent: { paddingBottom: 12 },
-  kicker: {
-    fontSize: 11,
-    color: colors.primary,
-    fontWeight: "900",
-    letterSpacing: 1,
-  },
-  title: {
-    fontSize: 25,
-    color: colors.text,
-    fontWeight: "900",
-    marginBottom: 6,
-  },
-  sectionHeading: {
-    fontSize: 17,
-    color: colors.text,
-    fontWeight: "900",
-    marginVertical: 8,
-  },
-  muted: { color: colors.muted, lineHeight: 20 },
-  link: { color: colors.primary, fontWeight: "800" },
-  banner: {
-    backgroundColor: "#FFF3E8",
-    padding: 12,
-    borderBottomWidth: 1,
-    borderColor: "#FFD9B8",
-  },
-  errorText: { color: colors.danger, lineHeight: 20 },
-  metrics: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginVertical: 12,
-  },
-  metric: {
-    width: "31%",
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-  },
-  metricValue: { fontSize: 25, color: colors.primary, fontWeight: "900" },
-  card: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 10,
-  },
-  cardTitle: {
-    fontSize: 16,
-    color: colors.text,
-    fontWeight: "900",
-    marginBottom: 5,
-  },
-  row: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  rowText: { color: colors.text, flex: 1 },
-  rowBetween: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  checkRow: {
-    flexDirection: "row",
-    gap: 10,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  checkBox: {
-    width: 44,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  checkCopy: { flex: 1, minWidth: 0 },
-  empty: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 18,
-    alignItems: "center",
-    marginVertical: 8,
-  },
-  badge: {
-    alignSelf: "flex-start",
-    backgroundColor: "#E2F1EF",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  badgeDanger: { backgroundColor: "#F9E0E0" },
-  badgeMuted: { backgroundColor: "#ECEFF2" },
-  badgeText: { color: colors.primary, fontSize: 11, fontWeight: "900" },
-  filters: { maxHeight: 48, marginBottom: 10 },
-  filter: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    marginRight: 8,
-    backgroundColor: colors.surface,
-  },
-  selected: { borderColor: colors.primary, backgroundColor: "#E2F1EF" },
-  primaryButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    padding: 14,
-    alignItems: "center",
-    marginVertical: 5,
-  },
-  dangerButton: {
-    backgroundColor: colors.danger,
-    borderRadius: 10,
-    padding: 14,
-    alignItems: "center",
-    marginVertical: 5,
-  },
-  outlineButton: {
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: 10,
-    padding: 13,
-    alignItems: "center",
-    marginVertical: 5,
-  },
-  primaryText: { color: "#FFFFFF", fontWeight: "900" },
-  outlineText: { color: colors.primary, fontWeight: "800" },
-  disabled: { opacity: 0.5 },
-  danger: { color: colors.danger },
-  nav: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderColor: colors.border,
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingVertical: 10,
-  },
-  navItem: { alignItems: "center", minWidth: 50 },
-  navIcon: {
-    fontSize: 20,
-    color: colors.muted,
-    textAlign: "center",
-    fontWeight: "900",
-  },
-  navBadge: {
-    position: "absolute",
-    right: -8,
-    top: -5,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.danger,
-    color: colors.surface,
-    textAlign: "center",
-    lineHeight: 16,
-    fontSize: 9,
-    fontWeight: "900",
-  },
-  navText: { fontSize: 11, color: colors.muted, fontWeight: "700" },
-  navActive: { color: colors.primary },
-  inputGroup: { gap: 5, marginBottom: 8 },
-  inputLabel: { fontSize: 12, color: colors.muted, fontWeight: "800" },
-  input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: colors.text,
-  },
-  textarea: { minHeight: 78, textAlignVertical: "top" },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    justifyContent: "flex-end",
-  },
-  modal: {
-    backgroundColor: colors.background,
-    padding: 16,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    maxHeight: "88%",
-  },
-  actions: { flexDirection: "row", gap: 10 },
-  attachmentActions: { flexDirection: "row", gap: 8, marginVertical: 10 },
-  selectedFile: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
-  },
-  homeContent: {
-    padding: 12,
-    paddingBottom: 92,
-    gap: 10,
-    backgroundColor: colors.background,
-  },
-  homeTop: {
-    height: 42,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-  },
-  valorMark: { flexDirection: "row", alignItems: "center", gap: 7 },
-  valorV: { color: colors.yellow, fontSize: 28, fontWeight: "900" },
-  logoSub: {
-    fontSize: 6,
-    color: colors.primary,
-    fontWeight: "900",
-    marginTop: -2,
-  },
-  homeTopActions: { flexDirection: "row", alignItems: "center", gap: 12 },
-  homeIcon: { fontSize: 18, color: colors.primary },
-  iconBadge: {
-    position: "absolute",
-    right: 0,
-    top: 0,
-    minWidth: 15,
-    height: 15,
-    borderRadius: 8,
-    backgroundColor: colors.danger,
-    color: colors.surface,
-    fontSize: 9,
-    textAlign: "center",
-    lineHeight: 15,
-    fontWeight: "900",
-  },
-  avatarCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#FFE5BE",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  homeAvatar: { fontSize: 20 },
-  heroCard: {
-    minHeight: 126,
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    padding: 14,
-    flexDirection: "row",
-    overflow: "hidden",
-  },
-  heroCopy: { flex: 1, zIndex: 2 },
-  heroKicker: { fontSize: 10, color: "#DDE5EF" },
-  heroTitle: {
-    fontSize: 19,
-    color: colors.surface,
-    fontWeight: "900",
-    marginTop: 4,
-  },
-  heroMeta: { fontSize: 10, color: "#DDE5EF", marginTop: 4 },
-  availability: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    marginTop: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 6,
-  },
-  availabilityDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.action,
-  },
-  availabilityText: { fontSize: 10, color: colors.action, fontWeight: "800" },
-  availabilityChevron: { fontSize: 13, color: colors.muted },
-  heroServiceBox: {
-    position: "absolute",
-    right: 10,
-    top: 28,
-    width: 48,
-    padding: 5,
-    borderRadius: 6,
-    backgroundColor: "rgba(255,255,255,0.09)",
-  },
-  heroServiceText: {
-    color: colors.surface,
-    fontSize: 7,
-    lineHeight: 9,
-    fontWeight: "900",
-    textAlign: "center",
-  },
-  techIllustration: {
-    width: 116,
-    alignItems: "center",
-    justifyContent: "flex-end",
-    position: "relative",
-  },
-  techHead: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: "#F6C79A",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 7,
-    borderColor: "#0B2347",
-  },
-  techFace: { color: "#1B3152", fontSize: 12 },
-  techBody: {
-    width: 72,
-    height: 58,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    backgroundColor: "#12345F",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  techBadge: { color: colors.yellow, fontSize: 20, fontWeight: "900" },
-  techThumb: {
-    position: "absolute",
-    right: 2,
-    bottom: 34,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.yellow,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  homeMetrics: { flexDirection: "row", gap: 8 },
-  homeMetric: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    padding: 9,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  homeMetricIcon: { color: colors.info, fontSize: 19, fontWeight: "900" },
-  homeMetricAmber: { color: colors.warn },
-  homeMetricRed: { color: colors.danger },
-  homeMetricGreen: { color: colors.action },
-  homeMetricValue: {
-    color: colors.primary,
-    fontSize: 20,
-    fontWeight: "900",
-    marginTop: 2,
-  },
-  homeMetricLabel: {
-    color: colors.muted,
-    fontSize: 9,
-    textAlign: "center",
-    lineHeight: 12,
-  },
-  homeSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 6,
-  },
-  homeSectionTitle: { fontSize: 15, color: colors.primary, fontWeight: "900" },
-  homeViewAll: { color: colors.info, fontSize: 11, fontWeight: "800" },
-  homeViewAllButton: { flexDirection: "row", alignItems: "center", gap: 2, minHeight: 32 },
-  homeJobRow: {
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    minHeight: 68,
-    padding: 9,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  jobTime: { fontSize: 9, color: colors.primary, fontWeight: "900", width: 52 },
-  homeJobCopy: { flex: 1, minWidth: 0 },
-  homeJobTitle: { fontSize: 11, color: colors.primary, fontWeight: "900" },
-  homeJobMeta: { fontSize: 9, color: colors.muted, marginTop: 4 },
-  homeDualRow: { flexDirection: "row", gap: 8 },
-  emergencyCard: {
-    flex: 1,
-    minHeight: 70,
-    backgroundColor: "#FFF0F0",
-    borderRadius: 8,
-    padding: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  supportCard: {
-    flex: 1,
-    minHeight: 70,
-    backgroundColor: "#EAF2FF",
-    borderRadius: 8,
-    padding: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  dualIcon: { fontSize: 23 },
-  dualCopy: { flex: 1, minWidth: 0 },
-  dualTitle: { fontSize: 11, color: colors.primary, fontWeight: "900" },
-  dualText: { fontSize: 9, color: colors.muted, lineHeight: 12, marginTop: 2 },
-  quickGrid: { flexDirection: "row", gap: 7 },
-  quickAction: {
-    flex: 1,
-    minHeight: 58,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  quickIcon: { color: colors.info, fontSize: 16, fontWeight: "900" },
-  quickIconRed: { color: colors.danger },
-  quickIconGreen: { color: colors.action },
-  quickIconAmber: { color: colors.warn },
-  quickLabel: {
-    color: colors.primary,
-    fontSize: 8,
-    fontWeight: "800",
-    marginTop: 5,
-    textAlign: "center",
-  },
-  safetyCard: {
-    backgroundColor: "#EAF7EF",
-    borderRadius: 8,
-    padding: 11,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 4,
-  },
-  safetyIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#C6EED5",
-    color: colors.action,
-    textAlign: "center",
-    lineHeight: 34,
-    fontWeight: "900",
-    fontSize: 19,
-  },
-  safetyCopy: { flex: 1 },
-  safetyTitle: { fontSize: 11, color: colors.primary, fontWeight: "900" },
-  safetyText: {
-    fontSize: 9,
-    color: colors.muted,
-    lineHeight: 13,
-    marginTop: 2,
-  },
-  chevron: { fontSize: 20, color: colors.muted },
-  jobsTitle: {
-    fontSize: 20,
-    color: colors.primary,
-    fontWeight: "900",
-    marginBottom: 8,
-  },
-  datePicker: {
-    height: 40,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  dateIcon: { color: colors.info, fontSize: 15, marginRight: 8 },
-  dateText: { flex: 1, color: colors.primary, fontSize: 11, fontWeight: "800" },
-  subFilterRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
-  subFilterInput: {
-    flex: 1,
-    height: 38,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    color: colors.text,
-    fontWeight: "800",
-  },
-  assignedCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 9,
-    marginBottom: 8,
-    flexDirection: "row",
-    gap: 9,
-  },
-  assignedVisual: {
-    width: 72,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#EAF2FF",
-    borderRadius: 7,
-    padding: 6,
-  },
-  assignedService: {
-    fontSize: 8,
-    color: colors.primary,
-    textAlign: "center",
-    marginTop: 4,
-    fontWeight: "800",
-  },
-  assignedCopy: { flex: 1, minWidth: 0 },
-  assignedTitle: {
-    fontSize: 11,
-    color: colors.primary,
-    fontWeight: "900",
-    flex: 1,
-  },
-  assignedMeta: { fontSize: 9, color: colors.muted, marginTop: 4 },
-  assignedActions: { flexDirection: "row", gap: 6, marginTop: 8 },
-  assignedCardLarge: {
-    backgroundColor: "#F8FBFF",
-    borderWidth: 1,
-    borderColor: "#D8E8FF",
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 10,
-  },
-  assignedTopRow: { flexDirection: "row", gap: 10 },
-  buildingThumb: {
-    width: 78,
-    height: 88,
-    borderRadius: 8,
-    backgroundColor: "#DDEBFA",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  assignedTimeBox: { width: 62, alignItems: "flex-end", justifyContent: "center" },
-  assignedTime: {
-    color: colors.primary,
-    fontSize: 11,
-    fontWeight: "900",
-    textAlign: "right",
-  },
-  assignedBottomRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 10,
-  },
-  serviceMini: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6 },
-  assignedServiceText: { fontSize: 9, color: colors.primary, fontWeight: "900" },
-  upcomingButton: { backgroundColor: "#E9F1FB" },
-  upcomingButtonText: { color: colors.muted },
-  viewButton: {
-    borderWidth: 1,
-    borderColor: colors.info,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    flex: 1,
-    alignItems: "center",
-  },
-  viewButtonText: { fontSize: 9, color: colors.info, fontWeight: "800" },
-  startButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    flex: 1,
-    alignItems: "center",
-  },
-  startButtonText: { fontSize: 9, color: colors.surface, fontWeight: "800" },
-  flowHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  flowHeaderRight: { alignItems: "flex-end", gap: 5 },
-  callCircle: {
-    minWidth: 42,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#E9F4FF",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 8,
-  },
-  callCircleText: { color: colors.info, fontSize: 10, fontWeight: "900" },
-  stepTracker: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  flowStepItem: { alignItems: "center", flex: 1, gap: 4 },
-  stepBubble: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#DDE5EF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepBubbleActive: { backgroundColor: colors.action },
-  stepBubbleText: { color: colors.surface, fontWeight: "900", fontSize: 12 },
-  flowStepText: { fontSize: 8, color: colors.muted, fontWeight: "800", textAlign: "center" },
-  flowStepTextActive: { color: colors.primary },
-  buildingCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 10,
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "center",
-  },
-  buildingCardCompact: { padding: 8 },
-  buildingImage: {
-    width: 92,
-    height: 92,
-    borderRadius: 8,
-    backgroundColor: "#DDEBFA",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  buildingGlyph: { fontSize: 36, color: colors.primary, fontWeight: "900" },
-  buildingCopy: { flex: 1, minWidth: 0 },
-  buildingTitle: { color: colors.primary, fontSize: 13, fontWeight: "900" },
-  locationCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 10,
-    gap: 8,
-  },
-  fakeMapSmall: {
-    height: 96,
-    borderRadius: 8,
-    backgroundColor: "#E5F0EA",
-    overflow: "hidden",
-    position: "relative",
-  },
-  mapLine: {
-    position: "absolute",
-    left: 30,
-    right: 46,
-    top: 46,
-    height: 3,
-    backgroundColor: colors.info,
-    transform: [{ rotate: "-8deg" }],
-  },
-  mapPin: { position: "absolute", right: 62, top: 36, color: colors.danger, fontSize: 20 },
-  mapLabel: {
-    position: "absolute",
-    right: 10,
-    top: 28,
-    color: colors.primary,
-    fontSize: 8,
-    fontWeight: "900",
-  },
-  mapOpen: {
-    position: "absolute",
-    right: 8,
-    bottom: 8,
-    color: colors.info,
-    fontSize: 9,
-    fontWeight: "900",
-    backgroundColor: colors.surface,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  routeMap: {
-    height: 210,
-    borderRadius: 10,
-    backgroundColor: "#E6EEF2",
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: "hidden",
-    position: "relative",
-  },
-  mapChipLeft: {
-    position: "absolute",
-    left: 42,
-    top: 48,
-    color: colors.info,
-    backgroundColor: colors.surface,
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    fontSize: 9,
-    fontWeight: "900",
-  },
-  mapBlueDot: { position: "absolute", left: 38, top: 76, color: colors.info, fontSize: 28 },
-  routeLine: {
-    position: "absolute",
-    left: 62,
-    right: 66,
-    top: 108,
-    height: 4,
-    backgroundColor: colors.info,
-    transform: [{ rotate: "-10deg" }],
-  },
-  routeLineDotted: { borderStyle: "dotted", borderWidth: 2, borderColor: colors.info, backgroundColor: "transparent" },
-  mapRedPin: { position: "absolute", right: 45, top: 112, color: colors.danger, fontSize: 28 },
-  mapChipRight: {
-    position: "absolute",
-    right: 26,
-    top: 88,
-    color: colors.primary,
-    backgroundColor: colors.surface,
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    fontSize: 9,
-    fontWeight: "900",
-  },
-  mapCity: { position: "absolute", left: "42%", top: 74, color: colors.muted, fontSize: 10 },
-  mapCorner: { position: "absolute", right: 14, bottom: 14, color: colors.info, fontSize: 20 },
-  routeStatsGrid: { flexDirection: "row", gap: 8 },
-  routeStatCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 10,
-  },
-  routeStatValue: { color: colors.primary, fontSize: 13, fontWeight: "900" },
-  routeStatLabel: { color: colors.muted, fontSize: 9, marginTop: 3 },
-  greenButton: {
-    backgroundColor: colors.action,
-    borderRadius: 10,
-    padding: 14,
-    alignItems: "center",
-    marginVertical: 5,
-  },
-  progressNotice: {
-    backgroundColor: "#E8F8ED",
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#C6EED5",
-  },
-  progressNoticeTitle: { color: colors.action, fontSize: 13, fontWeight: "900" },
-  progressNoticeText: { color: colors.action, fontSize: 10, marginTop: 4, lineHeight: 14 },
-  contactCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  profileAvatarSmall: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: "#E9F4FF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  completedHero: { alignItems: "center", paddingVertical: 18 },
-  completedCheck: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
-    backgroundColor: "#20C768",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  completedCheckText: { color: colors.surface, fontSize: 46, fontWeight: "900" },
-  completedTitle: { color: colors.primary, fontSize: 24, fontWeight: "900" },
-  ratingStars: {
-    color: colors.yellow,
-    fontSize: 26,
-    textAlign: "center",
-    marginVertical: 8,
-    fontWeight: "900",
-  },
-  detailContent: {
-    padding: 12,
-    paddingBottom: 96,
-    gap: 8,
-    backgroundColor: colors.background,
-  },
-  detailHeading: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  detailId: { fontSize: 9, color: colors.muted, marginTop: 1 },
-  detailIdentity: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 10,
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "center",
-  },
-  detailIdentityCopy: { flex: 1 },
-  detailPlace: { fontSize: 14, color: colors.primary, fontWeight: "900" },
-  detailMeta: { fontSize: 10, color: colors.muted, marginTop: 4 },
-  liftIllustration: {
-    width: 62,
-    height: 54,
-    backgroundColor: "#CFE0FF",
-    borderRadius: 7,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  liftIllustrationRed: { backgroundColor: "#FFE0E0" },
-  liftIllustrationGreen: { backgroundColor: "#D7F3E1" },
-  liftIcon: { fontSize: 30, color: colors.info, fontWeight: "900" },
-  detailTwoCol: { flexDirection: "row", gap: 8 },
-  detailRow: {
-    flex: 1,
-    minHeight: 58,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-  },
-  detailRowIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "#EAF2FF",
-    color: colors.info,
-    textAlign: "center",
-    lineHeight: 26,
-    fontWeight: "900",
-  },
-  detailWarningIcon: { backgroundColor: "#FFF5E6", color: colors.warn },
-  detailRowCopy: { flex: 1 },
-  detailRowLabel: { fontSize: 9, color: colors.muted },
-  detailRowValue: {
-    fontSize: 10,
-    color: colors.primary,
-    fontWeight: "800",
-    marginTop: 3,
-  },
-  detailSectionTitle: {
-    fontSize: 14,
-    color: colors.primary,
-    fontWeight: "900",
-    marginTop: 4,
-  },
-  alertToolbar: {
-    backgroundColor: "#EAF2FF",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  alertCount: { fontSize: 12, color: colors.primary, fontWeight: "900" },
-  notificationCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "flex-start",
-  },
-  notificationUnread: { borderColor: "#BFD4F6", backgroundColor: "#FBFDFF" },
-  notificationIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#EAF2FF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  notificationIconDanger: { backgroundColor: "#FFF0F0" },
-  notificationIconText: { fontSize: 16, color: colors.info, fontWeight: "900" },
-  notificationCopy: { flex: 1, minWidth: 0 },
-  notificationTitle: {
-    fontSize: 12,
-    color: colors.primary,
-    fontWeight: "900",
-    flex: 1,
-  },
-  notificationMessage: {
-    fontSize: 11,
-    lineHeight: 16,
-    color: colors.muted,
-    marginTop: 3,
-  },
-  notificationMeta: {
-    fontSize: 10,
-    color: colors.info,
-    fontWeight: "800",
-    marginTop: 6,
-  },
-  notificationTime: { fontSize: 9, color: colors.muted },
-  unreadDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.info,
-    marginTop: 5,
-  },
-  historyCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
-    flexDirection: "row",
-    gap: 10,
-  },
-  historyIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    backgroundColor: "#EAF7EF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  historyIconText: { color: colors.action, fontWeight: "900", fontSize: 18 },
-  historyCopy: { flex: 1, minWidth: 0 },
-  historyMeta: { fontSize: 10, color: colors.muted, marginTop: 5 },
-  journeyCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 14,
-    marginVertical: 4,
-  },
-  journeySteps: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginVertical: 12,
-  },
-  journeyStep: { flex: 1, alignItems: "center", gap: 5 },
-  journeyDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#ECEFF2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  journeyDotActive: { backgroundColor: colors.action },
-  journeyDotText: { fontSize: 14, color: colors.muted, fontWeight: "900" },
-  journeyLabel: { fontSize: 9, color: colors.muted, textAlign: "center" },
-  routeStats: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: 10,
-    marginTop: 4,
-  },
-  routeStat: {
-    flex: 1,
-    fontSize: 11,
-    color: colors.primary,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-  mapButton: {
-    backgroundColor: "#EAF2FF",
-    borderRadius: 8,
-    padding: 11,
-    alignItems: "center",
-    marginTop: 10,
-  },
-  mapButtonText: { color: colors.info, fontWeight: "900" },
-  otpPanel: {
-    backgroundColor: "#EAF2FF",
-    borderRadius: 10,
-    padding: 14,
-    marginVertical: 4,
-    gap: 4,
-  },
-  cashPanel: {
-    backgroundColor: "#EAF7EF",
-    borderRadius: 10,
-    padding: 14,
-    marginVertical: 4,
-    gap: 4,
-  },
-  successHint: { color: colors.action, fontWeight: "800", marginTop: 6 },
-  profileContent: {
-    padding: 14,
-    paddingBottom: 96,
-    backgroundColor: colors.background,
-    gap: 8,
-  },
-  profileCard: {
-    backgroundColor: "#EAF2FF",
-    borderRadius: 8,
-    padding: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-  },
-  profileEditCard: {
-    backgroundColor: "#EAF2FF",
-    borderRadius: 10,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  formCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-  },
-  securityCard: {
-    backgroundColor: "#EAF2FF",
-    borderRadius: 10,
-    padding: 14,
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "flex-start",
-  },
-  securityIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#CFE0FF",
-    color: colors.info,
-    textAlign: "center",
-    lineHeight: 34,
-    fontWeight: "900",
-    fontSize: 18,
-  },
-  helpTiles: { flexDirection: "row", gap: 8 },
-  helpTile: {
-    flex: 1,
-    minHeight: 86,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 9,
-  },
-  helpTileIcon: { color: colors.info, fontWeight: "900", fontSize: 17 },
-  helpTileTitle: {
-    fontSize: 10,
-    color: colors.primary,
-    fontWeight: "900",
-    marginTop: 7,
-  },
-  helpTileMeta: {
-    fontSize: 9,
-    color: colors.muted,
-    lineHeight: 13,
-    marginTop: 3,
-  },
-  faqRow: {
-    minHeight: 44,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  profileAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#D1E0FA",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  profileAvatarText: { fontSize: 23 },
-  profileCopy: { flex: 1 },
-  profileName: { fontSize: 13, color: colors.primary, fontWeight: "900" },
-  profileEmail: { fontSize: 9, color: colors.muted, marginTop: 3 },
-  profilePhone: { fontSize: 9, color: colors.muted, marginTop: 2 },
-  editPill: {
-    backgroundColor: colors.info,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  editPillText: { fontSize: 9, color: colors.surface, fontWeight: "800" },
-  settingsSection: {
-    fontSize: 12,
-    color: colors.primary,
-    fontWeight: "900",
-    marginTop: 11,
-    marginBottom: 2,
-  },
-  settingsRow: {
-    backgroundColor: colors.surface,
-    minHeight: 54,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingHorizontal: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-  },
-  settingsRowSelected: {
-    borderWidth: 1,
-    borderColor: colors.info,
-    borderRadius: 8,
-  },
-  settingsIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#EAF2FF",
-    color: colors.info,
-    textAlign: "center",
-    lineHeight: 28,
-    fontWeight: "900",
-  },
-  settingsCopy: { flex: 1 },
-  settingsTitle: { fontSize: 11, color: colors.primary, fontWeight: "800" },
-  settingsSubtitle: { fontSize: 9, color: colors.muted, lineHeight: 14 },
-  logoutButton: {
-    height: 42,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    borderRadius: 6,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 18,
-  },
-  logoutText: { color: colors.danger, fontSize: 11, fontWeight: "800" },
-  authSafe: { flex: 1, backgroundColor: colors.surface, paddingTop: Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0 },
-  authFrame: { flex: 1, backgroundColor: colors.surface },
-  authTop: {
-    height: 64,
-    paddingHorizontal: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  authBack: { width: 48, height: 48, justifyContent: "center", alignItems: "flex-start" },
-  authBackLink: { alignSelf: "center", minHeight: 40, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 2, paddingHorizontal: 12 },
-  brand: { flexDirection: "row", alignItems: "center", gap: 6 },
-  brandMark: {
-    fontSize: 33,
-    color: colors.yellow,
-    fontWeight: "900",
-    transform: [{ rotate: "180deg" }],
-  },
-  brandName: {
-    fontSize: 17,
-    color: colors.primary,
-    fontWeight: "900",
-    letterSpacing: 1,
-  },
-  brandSub: {
-    fontSize: 6,
-    color: colors.primary,
-    fontWeight: "900",
-    letterSpacing: 1.4,
-  },
-  stepText: {
-    width: 48,
-    textAlign: "right",
-    fontSize: 10,
-    color: colors.primary,
-  },
-  stepper: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingBottom: 14,
-    justifyContent: "space-between",
-  },
-  stepItem: { alignItems: "center", flex: 1 },
-  stepDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#E6EBF2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepDotActive: { backgroundColor: colors.info },
-  stepDotText: { fontSize: 11, color: colors.primary, fontWeight: "800" },
-  stepLabel: {
-    fontSize: 9,
-    color: colors.muted,
-    marginTop: 5,
-    textAlign: "center",
-  },
-  authContent: { padding: 14, paddingBottom: 30 },
-  authTitle: {
-    fontSize: 20,
-    color: colors.primary,
-    fontWeight: "900",
-    marginBottom: 4,
-  },
-  authSubtitle: {
-    fontSize: 12,
-    color: colors.muted,
-    lineHeight: 18,
-    marginBottom: 18,
-  },
-  authSectionTitle: {
-    fontSize: 18,
-    color: colors.primary,
-    fontWeight: "900",
-    marginTop: 4,
-  },
-  authHelper: {
-    fontSize: 11,
-    color: colors.muted,
-    marginBottom: 12,
-    lineHeight: 16,
-  },
-  authField: { marginBottom: 10 },
-  fieldLabel: {
-    fontSize: 10,
-    color: colors.primary,
-    fontWeight: "800",
-    marginBottom: 5,
-  },
-  authInput: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    color: colors.text,
-    backgroundColor: colors.surface,
-  },
-  fieldPlaceholder: { color: colors.muted, fontSize: 12 },
-  fieldValue: { color: colors.text, fontSize: 12 },
-  selectChevron: {
-    position: "absolute",
-    right: 12,
-    top: 12,
-    color: colors.muted,
-    fontSize: 16,
-  },
-  infoStrip: {
-    backgroundColor: "#EAF2FF",
-    borderRadius: 8,
-    padding: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginVertical: 8,
-  },
-  infoIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: colors.info,
-    color: colors.surface,
-    textAlign: "center",
-    lineHeight: 20,
-    fontWeight: "900",
-  },
-  infoText: { fontSize: 10, color: colors.muted, lineHeight: 15, flex: 1 },
-  authButton: {
-    minHeight: 48,
-    borderRadius: 8,
-    backgroundColor: colors.info,
-    marginTop: 12,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  authButtonText: { color: colors.surface, fontWeight: "800", fontSize: 13 },
-  authButtonSecondary: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.info,
-  },
-  authButtonSecondaryText: {
-    color: colors.info,
-    fontWeight: "800",
-    fontSize: 13,
-    textAlign: "center",
-    flex: 1,
-  },
-  authFooter: {
-    textAlign: "center",
-    color: colors.muted,
-    fontSize: 11,
-    marginTop: 14,
-  },
-  authLink: { color: colors.info, fontWeight: "800" },
-  authError: {
-    color: colors.danger,
-    fontSize: 11,
-    lineHeight: 16,
-    marginVertical: 6,
-  },
-  fieldValueText: { color: colors.text },
-  segmentRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
-  segment: {
-    flex: 1,
-    minHeight: 42,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  segmentActive: { borderColor: colors.info, backgroundColor: "#EAF2FF" },
-  segmentText: { fontSize: 11, color: colors.primary, fontWeight: "700" },
-  otpIllustration: {
-    height: 130,
-    width: 130,
-    borderRadius: 65,
-    backgroundColor: "#EAF2FF",
-    alignSelf: "center",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 18,
-    marginBottom: 18,
-  },
-  otpPhone: { fontSize: 76, color: "#8FA5D5", lineHeight: 84 },
-  otpBubble: {
-    position: "absolute",
-    right: 18,
-    top: 44,
-    backgroundColor: colors.info,
-    color: colors.surface,
-    borderRadius: 8,
-    padding: 9,
-    fontWeight: "900",
-  },
-  otpTitle: {
-    fontSize: 20,
-    color: colors.primary,
-    fontWeight: "900",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  otpPhoneText: {
-    fontSize: 14,
-    color: colors.primary,
-    fontWeight: "900",
-    textAlign: "center",
-    marginBottom: 10,
-  },
-  otpInput: {
-    height: 56,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    textAlign: "center",
-    letterSpacing: 8,
-    fontSize: 22,
-    color: colors.text,
-    marginVertical: 10,
-  },
-  otpHint: {
-    fontSize: 12,
-    color: colors.muted,
-    textAlign: "center",
-    marginTop: 18,
-  },
-  otpResend: {
-    fontSize: 12,
-    color: colors.muted,
-    textAlign: "center",
-    marginTop: 8,
-  },
-  documentRow: {
-    minHeight: 56,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 7,
-  },
-  documentIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "#EAF2FF",
-    color: colors.info,
-    textAlign: "center",
-    lineHeight: 32,
-    fontWeight: "900",
-  },
-  documentCopy: { flex: 1 },
-  documentTitle: { fontSize: 11, color: colors.primary, fontWeight: "800" },
-  documentMeta: { fontSize: 9, color: colors.muted, marginTop: 2 },
-  uploadAction: { color: colors.info, fontSize: 10, fontWeight: "800" },
-  uploaded: {
-    color: colors.action,
-    backgroundColor: "#EAF7EF",
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    fontSize: 9,
-    fontWeight: "800",
-  },
-  reviewCard: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 10,
-  },
-  reviewTitle: {
-    fontSize: 13,
-    color: colors.primary,
-    fontWeight: "900",
-    marginBottom: 8,
-  },
-  reviewRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-    paddingVertical: 4,
-  },
-  reviewLabel: { fontSize: 10, color: colors.muted, flex: 1 },
-  reviewValue: {
-    fontSize: 10,
-    color: colors.text,
-    fontWeight: "700",
-    flex: 1,
-    textAlign: "right",
-  },
-  successIcon: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
-    backgroundColor: "#EAF7EF",
-    color: colors.action,
-    textAlign: "center",
-    lineHeight: 92,
-    fontSize: 58,
-    fontWeight: "900",
-    alignSelf: "center",
-    marginTop: 38,
-    marginBottom: 18,
-  },
-  successTitle: {
-    fontSize: 24,
-    color: colors.primary,
-    fontWeight: "900",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  successText: {
-    fontSize: 13,
-    color: colors.muted,
-    lineHeight: 20,
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  screenTopRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 10,
-    marginBottom: 10,
-  },
-  filterChipButton: {
-    borderWidth: 1,
-    borderColor: colors.info,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: colors.surface,
-  },
-  segmentedTabs: {
-    flexDirection: "row",
-    backgroundColor: "#EAF1FB",
-    borderRadius: 8,
-    padding: 3,
-    marginBottom: 10,
-  },
-  segmentTab: {
-    flex: 1,
-    minHeight: 32,
-    borderRadius: 6,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 5,
-  },
-  segmentTabActive: { backgroundColor: colors.info },
-  segmentTabText: { color: colors.primary, fontSize: 10, fontWeight: "800", textAlign: "center" },
-  segmentTabTextActive: { color: colors.surface },
-  historyListRow: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
-    flexDirection: "row",
-    gap: 10,
-  },
-  historyIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    backgroundColor: "#EAF2FF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  historyJobId: { color: colors.primary, fontSize: 12, fontWeight: "900" },
-  historyBuilding: { color: colors.primary, fontSize: 11, fontWeight: "800", marginTop: 2 },
-  historyMetaRow: { flexDirection: "row", justifyContent: "space-between", gap: 8, marginTop: 7 },
-  groupTitle: { color: colors.primary, fontSize: 12, fontWeight: "900", marginVertical: 8 },
-  alertRow: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  alertIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
-  alertIconBlue: { backgroundColor: "#EAF2FF" },
-  alertIconDanger: { backgroundColor: "#FFE8E8" },
-  alertIconAmber: { backgroundColor: "#FFF4D8" },
-  alertIconMuted: { backgroundColor: "#EEF2F7" },
-  alertIconText: { color: colors.primary, fontSize: 14, fontWeight: "900" },
-  profileHeaderCard: {
-    backgroundColor: "#F1F6FF",
-    borderRadius: 10,
-    padding: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderWidth: 1,
-    borderColor: "#DDEBFF",
-    marginVertical: 10,
-  },
-  profilePhotoLarge: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    backgroundColor: "#DDEBFA",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  changePhotoButton: {
-    borderWidth: 1,
-    borderColor: colors.info,
-    borderRadius: 7,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    backgroundColor: colors.surface,
-  },
-  twoColumnForm: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 10,
-  },
-  twoColumnFormInner: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  formCardSoft: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, gap: 10 },
-  profileField: { width: "48%", gap: 5 },
-  profileFieldWide: { width: "100%" },
-  profileFieldLabel: { color: colors.primary, fontSize: 10, fontWeight: "900" },
-  profileFieldInput: {
-    height: 38,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 7,
-    paddingHorizontal: 10,
-    color: colors.text,
-    fontSize: 11,
-    backgroundColor: colors.surface,
-  },
-  profileFieldDisabled: { backgroundColor: "#F4F7FB", color: colors.muted },
-  securityCardBlue: { backgroundColor: "#EFF6FF", borderRadius: 10, padding: 12, flexDirection: "row", alignItems: "center", gap: 12, marginVertical: 10 },
-  securityLock: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.info, alignItems: "center", justifyContent: "center" },
-  passwordInputWrap: { height: 42, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", paddingHorizontal: 10, gap: 8 },
-  passwordLock: { color: colors.primary, fontWeight: "900" },
-  passwordInput: { flex: 1, color: colors.text, fontSize: 11 },
-  passwordEye: { color: colors.muted, fontWeight: "900" },
-  passwordRulesCard: { backgroundColor: "#EFF6FF", borderRadius: 10, padding: 12, marginVertical: 10 },
-  ruleText: { color: colors.primary, fontSize: 11, marginTop: 6 },
-  searchInput: { height: 40, borderRadius: 8, backgroundColor: "#EEF4FB", paddingHorizontal: 12, color: colors.text, marginVertical: 10 },
-  helpTilesFour: { flexDirection: "row", gap: 8, marginBottom: 12 },
-  supportTile: { flex: 1, minHeight: 94, borderRadius: 10, padding: 8, alignItems: "center" },
-  supportTileblue: { backgroundColor: "#EAF2FF" },
-  supportTilegreen: { backgroundColor: "#EAF8EF" },
-  supportTilered: { backgroundColor: "#FFEDED" },
-  supportTilepurple: { backgroundColor: "#F2EAFE" },
-  supportTileIcon: { color: colors.info, fontSize: 17, fontWeight: "900" },
-  supportTileTitle: { color: colors.primary, fontSize: 10, fontWeight: "900", textAlign: "center", marginTop: 5 },
-  supportTileMeta: { color: colors.muted, fontSize: 8, textAlign: "center", lineHeight: 11, marginTop: 3 },
-  supportContact: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 8,
-  },
-  supportContactDanger: { backgroundColor: "#FFF2F2", borderColor: "#FFD0D0" },
-  supportContactIcon: { width: 30, textAlign: "center", color: colors.info, fontWeight: "900" },
-  supportHours: { backgroundColor: "#EAF2FF", borderRadius: 10, padding: 10, flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
-  logoutRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-});

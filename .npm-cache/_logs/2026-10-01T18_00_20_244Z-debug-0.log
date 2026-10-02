@@ -1,0 +1,59 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Users\rk405\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js
+1 info using npm@12.1.0
+2 info using node@v24.19.0
+3 silly config load:file:C:\Users\rk405\AppData\Roaming\npm\node_modules\npm\npmrc
+4 silly config load:file:C:\Rama Krishna\Technician\Valor-technician\.npmrc
+5 silly config load:file:C:\Users\rk405\.npmrc
+6 silly config load:file:C:\Users\rk405\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm install expo-linear-gradient@~57.0.2
+8 verbose argv "install" "expo-linear-gradient@~57.0.2" "--ignore-scripts" "--cache" ".npm-cache" "--no-audit" "--no-fund"
+9 verbose logfile logs-max:10 dir:C:\Rama Krishna\Technician\Valor-technician\.npm-cache\_logs\2026-10-01T18_00_20_244Z-
+10 verbose logfile C:\Rama Krishna\Technician\Valor-technician\.npm-cache\_logs\2026-10-01T18_00_20_244Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:2348810240 maxSize:587202560 maxEntrySize:293601280
+13 silly idealTree buildDeps
+14 silly fetch manifest expo-linear-gradient@~57.0.2
+15 silly packumentCache full:https://registry.npmjs.org/expo-linear-gradient cache-miss
+16 http fetch GET https://registry.npmjs.org/npm attempt 1 failed with EACCES
+17 http fetch GET https://registry.npmjs.org/expo-linear-gradient attempt 1 failed with EACCES
+18 http fetch GET https://registry.npmjs.org/npm attempt 2 failed with EACCES
+19 http fetch GET https://registry.npmjs.org/expo-linear-gradient attempt 2 failed with EACCES
+20 http fetch GET https://registry.npmjs.org/npm attempt 3 failed with EACCES
+21 http fetch GET https://registry.npmjs.org/expo-linear-gradient attempt 3 failed with EACCES
+22 silly placeDep ROOT expo-linear-gradient@ OK for: valor-technician-app@0.1.0 want: ~57.0.2
+23 verbose type system
+24 verbose stack FetchError: request to https://registry.npmjs.org/expo-linear-gradient failed, reason: 
+24 verbose stack     at ClientRequest.<anonymous> (C:\Users\rk405\AppData\Roaming\npm\node_modules\npm\node_modules\minipass-fetch\lib\index.js:130:14)
+24 verbose stack     at ClientRequest.emit (node:events:509:28)
+24 verbose stack     at emitErrorEvent (node:_http_client:112:11)
+24 verbose stack     at _destroy (node:_http_client:1144:9)
+24 verbose stack     at onSocketNT (node:_http_client:1165:5)
+24 verbose stack     at process.processTicksAndRejections (node:internal/process/task_queues:91:21)
+25 error code EACCES
+26 error errno EACCES
+27 error FetchError: request to https://registry.npmjs.org/expo-linear-gradient failed, reason: 
+27 error     at ClientRequest.<anonymous> (C:\Users\rk405\AppData\Roaming\npm\node_modules\npm\node_modules\minipass-fetch\lib\index.js:130:14)
+27 error     at ClientRequest.emit (node:events:509:28)
+27 error     at emitErrorEvent (node:_http_client:112:11)
+27 error     at _destroy (node:_http_client:1144:9)
+27 error     at onSocketNT (node:_http_client:1165:5)
+27 error     at process.processTicksAndRejections (node:internal/process/task_queues:91:21) {
+27 error   code: 'EACCES',
+27 error   errno: 'EACCES',
+27 error   type: 'system',
+27 error   requiredBy: '.'
+27 error }
+28 error
+28 error The operation was rejected by your operating system.
+28 error It's possible that the file was already in use (by a text editor or antivirus), or that you lack permissions to access it.
+28 error
+28 error If you believe this might be a permissions issue, please double-check the permissions of the file and its containing directories, or try running the command again as root/Administrator.
+29 silly unfinished npm timer reify 1790877621943
+30 silly unfinished npm timer reify:loadTrees 1790877621944
+31 verbose cwd C:\Rama Krishna\Technician\Valor-technician
+32 verbose os Windows_NT 10.0.26200
+33 verbose node v24.19.0
+34 verbose npm  v12.1.0
+35 verbose exit 1
+36 verbose code 1
+37 error A complete log of this run can be found in: C:\Rama Krishna\Technician\Valor-technician\.npm-cache\_logs\2026-10-01T18_00_20_244Z-debug-0.log

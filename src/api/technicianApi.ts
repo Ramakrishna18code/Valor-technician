@@ -1,4 +1,5 @@
 import { environment } from "../config/environment";
+import { Platform } from "react-native";
 import { tokenStorage } from "../storage/tokens";
 import { requestData, unwrapEnvelope } from "./client";
 import type {
@@ -57,6 +58,18 @@ export interface ChangeRequestInput {
   requestedDate: string;
   requestedStartTime: string;
   requestedEndTime: string;
+}
+
+async function attachmentForm(file: UploadFile) {
+  const data = new FormData();
+  if (Platform.OS === "web") {
+    const response = await fetch(file.uri);
+    if (!response.ok) throw new Error("Could not read the selected attachment.");
+    data.append("file", await response.blob(), file.name);
+  } else {
+    data.append("file", file as unknown as Blob);
+  }
+  return data;
 }
 
 export const technicianApi = {
@@ -265,14 +278,13 @@ export const technicianApi = {
     return `${environment.apiBaseUrl}/api/v1/service-requests/${requestId}/attachments/${attachmentId}`;
   },
 
-  uploadAttachment(requestId: number, file: UploadFile) {
-    const data = new FormData();
-    data.append("file", file as unknown as Blob);
+  async uploadAttachment(requestId: number, file: UploadFile) {
+    const data = await attachmentForm(file);
     return requestData<AttachmentView>({
       method: "POST",
       url: `/api/v1/service-requests/${requestId}/attachments`,
       data,
-      headers: { "Content-Type": "multipart/form-data" },
+      headers: Platform.OS === "web" ? undefined : { "Content-Type": "multipart/form-data" },
     });
   },
 
@@ -366,14 +378,13 @@ export const technicianApi = {
     return `${environment.apiBaseUrl}/api/v1/technician/me/private-attachments/${id}`;
   },
 
-  uploadPrivateAttachment(file: UploadFile) {
-    const data = new FormData();
-    data.append("file", file as unknown as Blob);
+  async uploadPrivateAttachment(file: UploadFile) {
+    const data = await attachmentForm(file);
     return requestData<PrivateAttachmentView>({
       method: "POST",
       url: "/api/v1/technician/me/private-attachments",
       data,
-      headers: { "Content-Type": "multipart/form-data" },
+      headers: Platform.OS === "web" ? undefined : { "Content-Type": "multipart/form-data" },
     });
   },
 

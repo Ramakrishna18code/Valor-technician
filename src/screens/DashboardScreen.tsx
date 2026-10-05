@@ -51,11 +51,11 @@ export default function DashboardScreen(props: Props) {
     { label: "Today's visits", value: dashboard?.todaysScheduledVisits, icon: "calendar-outline", color: c.blue, action: props.onVisits },
     { label: "Emergency jobs", value: dashboard?.emergencyJobs, icon: "alert-circle-outline", color: c.red, action: props.onEmergency },
   ];
-  const actions: { title: string; detail: string; icon: Icon; onPress: () => void }[] = [
-    { title: "Assigned jobs", detail: "View jobs and update progress", icon: "briefcase-outline", onPress: props.onJobs },
-    { title: "Visit schedule", detail: "Plan upcoming site visits", icon: "calendar-outline", onPress: props.onVisits },
-    { title: "Service history", detail: "Review previous work", icon: "time-outline", onPress: props.onHistory },
-    { title: "Reports", detail: "See your work summary", icon: "bar-chart-outline", onPress: props.onReports },
+  const actions: { title: string; detail: string; icon: Icon; color: string; background: string; onPress: () => void }[] = [
+    { title: "Assigned jobs", color: c.green, background: "#EAF7EF", detail: "View jobs and update progress", icon: "briefcase-outline", onPress: props.onJobs },
+    { title: "Visit schedule", color: "#7856C7", background: "#F1EDFB", detail: "Plan upcoming site visits", icon: "calendar-outline", onPress: props.onVisits },
+    { title: "Service history", color: c.teal, background: "#E7F5F3", detail: "Review previous work", icon: "time-outline", onPress: props.onHistory },
+    { title: "Reports", color: c.amber, background: "#FFF5E6", detail: "See your work summary", icon: "bar-chart-outline", onPress: props.onReports },
   ];
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}
@@ -63,12 +63,12 @@ export default function DashboardScreen(props: Props) {
       <View style={s.top}>
         <View style={s.brand}><Text style={s.brandMark}>V</Text><View><Text style={s.brandName}>VALOR</Text><Text style={s.brandMeta}>TECHNICIAN</Text></View></View>
         <View style={s.topActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Refresh dashboard" disabled={loading} onPress={props.onRefresh} style={s.iconButton}><Ionicons name="refresh-outline" size={22} color={c.navy} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Refresh dashboard" disabled={loading} onPress={props.onRefresh} style={s.iconButton}><Ionicons name="refresh-outline" size={22} color={c.teal} /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={`Notifications, ${props.unreadCount} unread`} onPress={props.onNotifications} style={s.iconButton}>
-            <Ionicons name="notifications-outline" size={23} color={c.navy} />
+            <Ionicons name="notifications-outline" size={23} color={c.amber} />
             {props.unreadCount > 0 && <Text style={s.notificationBadge}>{props.unreadCount > 9 ? "9+" : props.unreadCount}</Text>}
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Open profile" onPress={props.onProfile} style={[s.iconButton, s.profileIcon]}><Ionicons name="person-outline" size={22} color={c.navy} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open profile" onPress={props.onProfile} style={[s.iconButton, s.profileIcon]}><Ionicons name="person-outline" size={22} color={c.blue} /></Pressable>
         </View>
       </View>
       <View style={s.hero}>
@@ -102,7 +102,7 @@ export default function DashboardScreen(props: Props) {
         <View style={s.flex}><Text style={s.cardTitle}>{nextVisit ? nextVisit.title || nextVisit.serviceId || `Visit ${nextVisit.id}` : "No upcoming visit"}</Text><Text style={s.meta}>{nextVisit ? `${nextVisit.scheduledDate} · ${nextVisit.startTime?.slice(0, 5) || "Time pending"}` : "Newly scheduled visits will appear here."}</Text></View><Ionicons name="chevron-forward" size={20} color={c.muted} />
       </Pressable>
       <Text style={s.heading}>Quick actions</Text>
-      <View style={s.grid}>{actions.map(action => <Pressable accessibilityRole="button" key={action.title} onPress={action.onPress} style={[s.action, { width: wide ? "23%" : "47%" }]}><Ionicons name={action.icon} size={24} color={c.blue} /><Text style={s.cardTitle}>{action.title}</Text><Text style={s.caption}>{action.detail}</Text></Pressable>)}</View>
+      <View style={s.grid}>{actions.map(action => <Pressable accessibilityRole="button" key={action.title} onPress={action.onPress} style={[s.action, { width: wide ? "23%" : "47%" }]}><View style={[s.actionIcon, { backgroundColor: action.background }]}><Ionicons name={action.icon} size={24} color={action.color} /></View><Text style={s.cardTitle}>{action.title}</Text><Text style={s.caption}>{action.detail}</Text></Pressable>)}</View>
       <View style={s.grid}>
         <Pressable accessibilityRole="button" style={[s.assistance, s.emergencySurface]} onPress={props.onEmergency}><Ionicons name="alert-circle-outline" size={24} color={c.red} /><View style={s.flex}><Text style={s.cardTitle}>Emergency jobs</Text><Text style={s.caption}>{dashboard?.emergencyJobs ?? "—"} assigned · view priority work</Text></View><Ionicons name="chevron-forward" size={18} color={c.muted} /></Pressable>
         <Pressable accessibilityRole="button" style={s.assistance} onPress={props.onSupport}><Ionicons name="headset-outline" size={24} color={c.blue} /><View style={s.flex}><Text style={s.cardTitle}>Need assistance?</Text><Text style={s.caption}>Find guidance for contacting your supervisor</Text></View><Ionicons name="chevron-forward" size={18} color={c.muted} /></Pressable>
@@ -130,5 +130,6 @@ const s = StyleSheet.create({
   cardTitle: { color: c.navy, fontSize: 15, lineHeight: 22, fontWeight: "700", flexShrink: 1 }, meta: { color: c.muted, fontSize: 14, lineHeight: 21, flexShrink: 1 }, caption: { color: c.muted, fontSize: 12, lineHeight: 18, flexShrink: 1 },
   job: { backgroundColor: "white", borderRadius: 14, borderWidth: 1, borderColor: c.border, padding: 16, gap: 8 }, jobTop: { flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }, jobId: { color: c.blue, fontSize: 12, fontWeight: "700" }, status: { color: c.teal, backgroundColor: "#E7F5F3", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, fontSize: 12 }, emergency: { color: c.red, backgroundColor: "#FFF0F0" }, jobBottom: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   visit: { backgroundColor: "white", borderWidth: 1, borderColor: c.border, borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 }, visitIcon: { backgroundColor: "#EAF2FF", borderRadius: 12, padding: 12 },
+  actionIcon: { width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center" },
   action: { flexGrow: 1, backgroundColor: "white", borderWidth: 1, borderColor: c.border, borderRadius: 14, padding: 16, gap: 10 }, assistance: { flexGrow: 1, flexBasis: 280, backgroundColor: "#EAF2FF", borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 }, emergencySurface: { backgroundColor: "#FFF0F0" }, safety: { borderRadius: 14, padding: 16, backgroundColor: "#EAF7EF", flexDirection: "row", alignItems: "center", gap: 12 },
 });

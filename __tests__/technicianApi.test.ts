@@ -1,6 +1,7 @@
 import {api, ApiError, unwrapEnvelope} from '../src/api/client';
 import {technicianApi} from '../src/api/technicianApi';
 import {tokenStorage} from '../src/storage/tokens';
+import {Platform} from 'react-native';
 
 jest.mock('../src/config/environment', () => ({
   environment: {apiBaseUrl: 'http://10.0.2.2:8081', websocketUrl: ''},
@@ -71,6 +72,28 @@ function rejectApi(message: string, status = 422) {
 }
 
 describe('canonical technician API', () => {
+  it('uploads browser attachments as binary files with a generated multipart boundary', async () => {
+    const originalFetch = global.fetch;
+    const originalOS = Platform.OS;
+    const file = new Blob(['attachment'], {type: 'image/png'});
+    global.fetch = jest.fn(async () => ({ok: true, blob: async () => file})) as jest.Mock;
+    (Platform as {OS: string}).OS = 'web';
+    try {
+      const calls = captureApi();
+      await technicianApi.uploadAttachment(7, {uri: 'blob:local-photo', name: 'photo.png', type: 'image/png'});
+      await technicianApi.uploadPrivateAttachment({uri: 'blob:local-photo', name: 'photo.png', type: 'image/png'});
+      expect(global.fetch).toHaveBeenCalledWith('blob:local-photo');
+      for (const call of calls) {
+        const uploaded = (call.data as FormData).get('file') as File;
+        expect(uploaded.name).toBe('photo.png');
+        expect(await uploaded.text()).toBe('attachment');
+        expect(String((call.headers as Record<string, unknown>)['Content-Type'])).not.toContain('multipart/form-data');
+      }
+    } finally {
+      global.fetch = originalFetch;
+      (Platform as {OS: string}).OS = originalOS;
+    }
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     store.accessToken = 'access-token';
@@ -219,6 +242,19 @@ describe('canonical technician API', () => {
 
     expect(calls[0]).toMatchObject({method: 'get', url: '/api/v1/notifications', params: {page: 1, size: 20, status: 'PENDING'}});
     expect(calls[1]).toMatchObject({method: 'put', url: '/api/v1/notifications/4/read'});
+  });
+
+  it('requests and verifies the customer arrival code for the selected service', async () => {
+    const calls = captureApi(() => ({id: 9, serviceRequestId: 42, status: 'PENDING', attemptsRemaining: 5}));
+    await technicianApi.requestArrivalOtp(42);
+    await technicianApi.arrivalOtp(42);
+    await technicianApi.verifyArrivalOtp(42, 9, '123456');
+    expect(calls.map(call => [call.method, call.url])).toEqual([
+      ['post', '/api/v1/technician/me/jobs/42/arrival-otp/request'],
+      ['get', '/api/v1/service-requests/42/arrival-otp'],
+      ['post', '/api/v1/technician/me/jobs/42/arrival-otp/verify'],
+    ]);
+    expect(JSON.parse(calls[2].data as string)).toEqual({otpId: 9, otp: '123456'});
   });
 
   it('logs out through the canonical refresh-token route and clears local credentials', async () => {

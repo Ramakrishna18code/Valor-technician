@@ -1,3 +1,7 @@
+import BottomNav from "./components/TechnicianTabBar";
+import ProfileScreen from "./screens/ProfileScreen";
+import HistoryScreen from "./screens/HistoryScreen";
+import VisitsScreen from "./screens/VisitsScreen";
 import Dashboard from "./screens/DashboardScreen";
 import WelcomeScreen from "./screens/WelcomeScreen";
 import { ServiceHero, ServiceReveal, ServiceSection } from "./components/ServiceExperience";
@@ -34,10 +38,7 @@ import {
   type TechnicianApplicationDocument,
 } from "./api/technicianApplicationApi";
 import { tokenStorage } from "./storage/tokens";
-import {
-  TECHNICIAN_PRIMARY_NAV,
-  type Screen,
-} from "./screens/screenRegistry";
+import { type Screen } from "./screens/screenRegistry";
 import {
   ensureBackgroundTracking,
   stopBackgroundTracking,
@@ -157,6 +158,7 @@ const LOCATION_INTERVAL_MS = 5 * 60 * 1000;
 const label = (value?: string | null) =>
   value
     ? value
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
         .replace(/_/g, " ")
         .toLowerCase()
         .replace(/\b\w/g, (c) => c.toUpperCase())
@@ -733,16 +735,13 @@ export default function App() {
           />
         )}
         {screen === "history" && (
-          <History
+          <HistoryScreen
             items={history?.items ?? []}
             filter={historyFilter}
-            onLoad={() =>
-              loadHistory().catch((error) => setMessage(err(error)))
-            }
-            onFilter={(index) =>
-              loadHistory(index).catch((error) => setMessage(err(error)))
-            }
+            onLoad={loadHistory}
+            onFilter={loadHistory}
             onJob={openJob}
+            infoForJob={jobInfo}
           />
         )}
         {screen === "reports" && (
@@ -860,12 +859,7 @@ export default function App() {
           />
         )}
         {screen === "visits" && (
-          <Visits
-            visits={visits?.items ?? []}
-            loading={loading}
-            onVisit={openVisit}
-            onRefresh={loadCore}
-          />
+          <VisitsScreen onVisit={openVisit} />
         )}
         {screen === "visitDetail" && selectedVisit && (
           <VisitDetailScreen
@@ -896,7 +890,7 @@ export default function App() {
           />
         )}
         {screen === "profile" && (
-          <Profile
+          <ProfileScreen
             profile={profile}
             dashboard={dashboard}
             onNavigate={(next) => setScreen(next)}
@@ -958,8 +952,6 @@ export default function App() {
               screen={screen}
               unreadCount={notifications?.items.filter((item) => item.status !== "READ").length ?? 0}
               onChange={(next) => {
-                if (next === "history")
-                  loadHistory().catch((error) => setMessage(err(error)));
                 setScreen(next);
               }}
             />
@@ -992,10 +984,16 @@ export default function App() {
                   values.notes,
                 );
               }
-              if (pendingStatus === "REACHED_SITE")
-                setArrivalOtp(
-                  await technicianApi.requestArrivalOtp(selectedJob.request.id),
-                );
+              if (pendingStatus === "REACHED_SITE") {
+                try {
+                  setArrivalOtp(await technicianApi.requestArrivalOtp(selectedJob.request.id));
+                } catch {
+                  setModal(null);
+                  await refreshJob();
+                  setMessage("Arrival saved. The code could not be sent. Tap Send arrival OTP in the service screen to retry.");
+                  return;
+                }
+              }
             }
             if (modal === "transition" && selectedVisit && pendingVisitStatus)
               setSelectedVisit(
@@ -2220,46 +2218,6 @@ function Jobs({ items, filter, loading, onFilter, onJob, onStartJob }: {
     ListEmptyComponent={loading ? <ActivityIndicator color={colors.info} /> : <Empty text="No jobs match these filters. Try All statuses and All dates." />}
   />;
 }
-function History({
-  items,
-  filter,
-  onLoad,
-  onFilter,
-  onJob,
-}: {
-  items: RequestView[];
-  filter: number;
-  onLoad: () => void;
-  onFilter: (index: number) => void;
-  onJob: (job: RequestView) => void;
-}) {
-  useEffect(() => {
-    onLoad();
-  }, []);
-  return (
-    <View style={styles.contentFill}>
-      <View style={styles.screenTopRow}>
-        <View style={{flexGrow: 1, flexBasis: 220, minWidth: 0}}>
-          <Text style={styles.jobsTitle}>Job History</Text>
-          <Text style={styles.settingsSubtitle}>Review your assigned, completed and cancelled jobs.</Text>
-        </View>
-        
-      </View>
-      <SegmentedTabs
-        labels={["All", "Completed", "Cancelled", "Emergency"]}
-        active={filter}
-        onChange={onFilter}
-      />
-      <FlatList
-        data={items}
-        keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => <HistoryJobRow job={item} onPress={() => onJob(item)} />}
-        ListEmptyComponent={<Empty text="No history for this filter." />}
-      />
-    </View>
-  );
-}
 function JobDetailScreen({
   detail,
   tracking,
@@ -2311,6 +2269,10 @@ function JobDetailScreen({
   const info = jobInfo(request);
   const checklistDone = !checklist || checklist.status === "COMPLETED";
   const otpDone = completionOtp?.status === "VERIFIED";
+  const arrivalBlocked = request.status === "REACHED_SITE" && arrivalOtp?.status !== "VERIFIED";
+  const nextStatus: RequestStatus = request.status === "REACHED_SITE" ? "DIAGNOSIS" : request.status === "DIAGNOSIS" || request.status === "WAITING_FOR_PARTS" ? "REPAIR_IN_PROGRESS" : request.status === "TESTING" ? "COMPLETED" : "TESTING";
+  const nextLabel = request.status === "REACHED_SITE" ? "Start diagnosis" : request.status === "DIAGNOSIS" ? "Start repair" : request.status === "WAITING_FOR_PARTS" ? "Resume repair" : request.status === "TESTING" ? "Complete job" : "Proceed to testing";
+  const nextDisabled = arrivalBlocked || (request.status === "TESTING" && (!checklistDone || !otpDone));
   const hasDocuments = attachments.length > 0;
   const openAttachment = async (attachment: AttachmentView) => {
     const url = technicianApi.attachmentUrl(request.id, attachment.id);
@@ -2380,7 +2342,7 @@ function JobDetailScreen({
         </View>
         <Info title="Job Instructions" rows={[info.instructions || "Carry standard service kit. Check door sensors and lubrication."]} />
         <Pressable style={styles.primaryButton} onPress={() => onTransition("REACHED_SITE")}>
-          <Text style={styles.primaryText}>Slide to Reached Location</Text>
+          <Text style={styles.primaryText}>Reached site</Text>
         </Pressable>
       </ScrollView>
     );
@@ -2392,12 +2354,15 @@ function JobDetailScreen({
         <ServiceReveal key={request.id}>
           <ServiceHero status={request.status} jobId={request.serviceId || `SR-${request.id}`} building={info.building} service={label(request.serviceType)} />
         </ServiceReveal>
+        {request.status === "REACHED_SITE" || request.status === "DIAGNOSIS" ? (
+          <ArrivalOtpPanel key={request.id} state={arrivalOtp} onRequest={onRequestArrivalOtp} onVerify={onVerifyArrivalOtp} />
+        ) : null}
         <ServiceReveal delay={100}>
         <View style={styles.progressNotice}>
           <AppIcon name="construct-outline" size={22} color={colors.teal} />
           <View style={styles.serviceFlexibleCopy}>
             <Text style={styles.progressNoticeTitle}>{label(request.status)}</Text>
-            <Text style={styles.progressNoticeText}>Complete the checklist and record your findings before finishing the job.</Text>
+            <Text style={styles.progressNoticeText}>{arrivalBlocked ? "Confirm arrival with the customer OTP before starting diagnosis." : "Complete the checklist and record your findings before finishing the job."}</Text>
           </View>
         </View>
         </ServiceReveal>
@@ -2411,14 +2376,12 @@ function JobDetailScreen({
         <ServiceReveal delay={380}><ServiceSection number="03" title="The work ahead" subtitle="Check, record and complete" /></ServiceReveal>
         <ServiceReveal delay={420}>
         <View style={styles.serviceInstructionCard}>
-          <View style={styles.serviceSectionHeading}><AppIcon name="clipboard-outline" size={20} color={colors.primary} /><Text style={styles.serviceCardHeading}>Job instructions</Text></View>
+          <View style={styles.serviceSectionHeading}><AppIcon name="clipboard-outline" size={20} color={colors.warn} /><Text style={styles.serviceCardHeading}>Job instructions</Text></View>
           <Text style={styles.serviceBodyText}>{info.instructions || "No additional instructions have been provided for this job."}</Text>
         </View>
         </ServiceReveal>
         <ChecklistPanel checklist={checklist} onSave={onChecklistSave} />
-        {request.status === "REACHED_SITE" || request.status === "DIAGNOSIS" ? (
-          <ArrivalOtpPanel state={arrivalOtp} onRequest={onRequestArrivalOtp} onVerify={onVerifyArrivalOtp} />
-        ) : null}
+
         {request.status === "TESTING" ? (
           <CompletionOtpPanel state={completionOtp} onRequest={onRequestOtp} onVerify={onVerifyOtp} />
         ) : null}
@@ -2430,18 +2393,18 @@ function JobDetailScreen({
         ) : null}
         <Pressable
           accessibilityRole="button"
-          style={({ pressed }) => [styles.servicePrimaryAction, pressed && styles.serviceActionPressed, request.status === "TESTING" && (!checklistDone || !otpDone) && styles.disabled]}
-          disabled={request.status === "TESTING" && (!checklistDone || !otpDone)}
-          onPress={() => onTransition(request.status === "TESTING" ? "COMPLETED" : "TESTING")}
+          style={({ pressed }) => [styles.servicePrimaryAction, pressed && styles.serviceActionPressed, nextDisabled && styles.disabled]}
+          disabled={nextDisabled}
+          onPress={() => onTransition(nextStatus)}
         >
-          <Text style={styles.primaryText}>{request.status === "TESTING" ? "Complete job" : "Proceed to testing"}</Text>
+          <Text style={styles.primaryText}>{nextLabel}</Text>
           <AppIcon name="arrow-forward" size={20} color={colors.surface} />
         </Pressable>
-        <Pressable style={styles.outlineButton} onPress={() => onTransition("WAITING_FOR_PARTS")}>
-          <Text style={styles.outlineText}>Request Revisit</Text>
-        </Pressable>
-        <Pressable style={styles.outlineButton} onPress={onReport}>
-          <Text style={styles.outlineText}>View Service Details</Text>
+        {request.status === "REPAIR_IN_PROGRESS" && <Pressable style={styles.serviceSecondaryAction} onPress={() => onTransition("WAITING_FOR_PARTS")}>
+          <Text style={styles.outlineText}>Waiting for parts</Text>
+        </Pressable>}
+        <Pressable style={styles.serviceSecondaryAction} onPress={onReport}>
+          <Text style={styles.outlineText}>Service report & notes</Text>
         </Pressable>
       </ScrollView>
     );
@@ -2643,7 +2606,7 @@ function BuildingSummaryCard({
   return (
     <View style={[styles.buildingCard, compact && styles.buildingCardCompact]}>
       <View style={styles.buildingImage}>
-        <AppIcon name="business-outline" size={34} color={colors.primary} />
+        <AppIcon name="business-outline" size={34} color={colors.action} />
       </View>
       <View style={styles.buildingCopy}>
         <View style={styles.serviceBuildingHeading}>
@@ -2719,7 +2682,7 @@ function RouteMapCard({
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={`Open directions to ${info.building}`} style={styles.serviceDirectionsCard} onPress={onOpenMaps}>
       <View style={styles.serviceSectionHeading}>
-        <View style={styles.serviceLocationIcon}><AppIcon name="navigate-outline" size={24} color={colors.primary} /></View>
+        <View style={styles.serviceLocationIcon}><AppIcon name="navigate-outline" size={24} color={colors.info} /></View>
         <View style={styles.serviceFlexibleCopy}>
           <Text style={styles.serviceCardHeading}>Site directions</Text>
           <Text style={styles.serviceBodyText}>{info.location}</Text>
@@ -2753,10 +2716,10 @@ function CustomerContactCard({ info }: { info: ReturnType<typeof jobInfo> }) {
       </View>
       <View style={styles.serviceContactActions}>
         <Pressable accessibilityRole="button" accessibilityLabel="Call customer" style={({ pressed }) => [styles.serviceContactButton, pressed && styles.serviceActionPressed]} onPress={() => callPhone(info.phone)}>
-          <AppIcon name="call-outline" size={18} color={colors.primary} /><Text style={styles.serviceActionText}>Call</Text>
+          <AppIcon name="call-outline" size={18} color={colors.action} /><Text style={styles.serviceActionText}>Call</Text>
         </Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="Message customer" style={({ pressed }) => [styles.serviceContactButton, pressed && styles.serviceActionPressed]} onPress={() => messagePhone(info.phone)}>
-          <AppIcon name="chatbubble-outline" size={18} color={colors.primary} /><Text style={styles.serviceActionText}>Message</Text>
+          <AppIcon name="chatbubble-outline" size={18} color={colors.info} /><Text style={styles.serviceActionText}>Message</Text>
         </Pressable>
       </View>
     </View>
@@ -2929,7 +2892,7 @@ function ChecklistPanel({
   if (!checklist)
     return (
       <View style={styles.workPanel}>
-        <View style={styles.serviceSectionHeading}><View style={styles.verificationIcon}><AppIcon name="list-outline" size={24} color={colors.primary} /></View><View style={styles.serviceFlexibleCopy}><Text style={styles.panelEyebrow}>SERVICE CHECKS</Text><Text style={styles.serviceCardHeading}>Checklist</Text></View><Text style={styles.panelTag}>Not assigned</Text></View>
+        <View style={styles.serviceSectionHeading}><View style={styles.verificationIcon}><AppIcon name="list-outline" size={24} color={colors.teal} /></View><View style={styles.serviceFlexibleCopy}><Text style={styles.panelEyebrow}>SERVICE CHECKS</Text><Text style={styles.serviceCardHeading}>Checklist</Text></View><Text style={styles.panelTag}>Not assigned</Text></View>
         <View style={styles.checklistEmpty}><Text style={styles.serviceBodyText}>No checklist has been assigned for this service type.</Text></View>
       </View>
     );
@@ -3033,36 +2996,6 @@ function CompletionOtpPanel({
           </Pressable>
         </>
       ) : null}
-    </View>
-  );
-}
-
-function Visits({
-  visits,
-  loading,
-  onVisit,
-  onRefresh,
-}: {
-  visits: VisitView[];
-  loading: boolean;
-  onVisit: (visit: VisitView) => void;
-  onRefresh: () => void;
-}) {
-  return (
-    <View style={styles.contentFill}>
-      <SectionTitle title="Visits" action="Refresh" onAction={onRefresh} />
-      {loading ? (
-        <ActivityIndicator color={colors.primary} />
-      ) : (
-        <FlatList
-          data={visits}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => (
-            <VisitCard visit={item} onPress={() => onVisit(item)} />
-          )}
-          ListEmptyComponent={<Empty text="No visits assigned." />}
-        />
-      )}
     </View>
   );
 }
@@ -3221,71 +3154,6 @@ function Notifications({
         ListEmptyComponent={<Empty text="No notifications." />}
       />
     </View>
-  );
-}
-function Profile({
-  profile,
-  dashboard,
-  onNavigate,
-  onLogout,
-}: {
-  profile: TechnicianProfileView | null;
-  dashboard: TechnicianDashboard | null;
-  onNavigate: (screen: Screen) => void;
-  onLogout: () => void;
-}) {
-  const name =
-    profile?.email?.split("@")[0].replace(/^tech[._-]/i, "").replace(/[._-]+/g, " ") || profile?.employeeId || "Technician";
-  const row = (
-    icon: IoniconName,
-    title: string,
-    subtitle: string,
-    target: Screen,
-  ) => (
-    <Pressable style={styles.settingsRow} onPress={() => onNavigate(target)}>
-      <View style={styles.settingsIcon}>
-        <AppIcon name={icon} size={19} color={colors.info} />
-      </View>
-      <View style={styles.settingsCopy}>
-        <Text style={styles.settingsTitle}>{title}</Text>
-        <Text style={styles.settingsSubtitle}>{subtitle}</Text>
-      </View>
-      <ChevronIcon />
-    </Pressable>
-  );
-  return (
-    <ScrollView contentContainerStyle={styles.profileContent}>
-      <Text style={styles.jobsTitle}>Settings</Text>
-      <Text style={styles.settingsSubtitle}>Manage your account and app preferences</Text>
-      <View style={styles.profileCard}>
-        <View style={styles.profileAvatar}>
-          <AppIcon name="person" size={30} color={colors.info} />
-        </View>
-        <View style={styles.profileCopy}>
-          <Text style={styles.profileName}>{label(name)}</Text>
-          <Text style={styles.profileEmail}>{profile?.email || "Technician account"}</Text>
-          <Text style={styles.profilePhone}>{profile?.phone || profile?.employeeId || "Valor Lift Services"}</Text>
-        </View>
-        <Pressable style={styles.editPill} onPress={() => onNavigate("profileDetails")}>
-          <Text style={styles.editPillText}>Edit Profile</Text>
-        </Pressable>
-      </View>
-      <Text style={styles.settingsSection}>Account Settings</Text>
-      {row("person-outline", "Personal Information", "Manage your personal details", "profileDetails")}
-      {row("lock-closed-outline", "Password Support", "Request a password reset", "profilePassword")}
-      {row("notifications-outline", "Notifications", "View job updates and alerts", "profileNotifications")}
-      {row("language-outline", "Language", "Choose your preferred language", "profileLanguage")}
-      <Text style={styles.settingsSection}>App Settings</Text>
-      {row("location-outline", "Location Services", "Allow location access for job tracking", "profileLocation")}
-      {row("moon-outline", "Dark Mode", "Switch between light and dark theme", "profileTheme")}
-      <Text style={styles.settingsSection}>Support & About</Text>
-      {row("help-circle-outline", "Help & Support", "Get help and contact support", "profileHelp")}
-      {row("shield-checkmark-outline", "Terms & Privacy", "Read our terms and privacy policy", "profileAbout")}
-      {row("information-circle-outline", "About", "App version and company information", "profileAbout")}
-      <Pressable style={styles.logoutButton} onPress={onLogout}>
-        <View style={styles.logoutRow}><AppIcon name="log-out-outline" size={18} color={colors.danger} /><Text style={styles.logoutText}>Logout</Text></View>
-      </Pressable>
-    </ScrollView>
   );
 }
 function ProfileDetailsPage({ profile, onSave }: { profile: TechnicianProfileView | null; onSave: (input: Partial<TechnicianProfileView>) => Promise<void> }) {
@@ -4117,29 +3985,6 @@ function SegmentedTabs({
   );
 }
 
-function HistoryJobRow({ job, onPress }: { job: RequestView; onPress: () => void }) {
-  const info = jobInfo(job);
-  const tone = job.status === "CANCELLED" ? "danger" : job.priority === "EMERGENCY" ? "danger" : "info";
-  return (
-    <Pressable style={styles.historyListRow} onPress={onPress}>
-      <View style={styles.historyIconBox}><AppIcon name="business-outline" size={20} color={colors.info} /></View>
-      <View style={styles.historyCopy}>
-        <View style={styles.rowBetween}>
-          <Text style={styles.historyJobId}>{job.serviceId || `JOB-${job.id}`}</Text>
-          <Badge text={job.priority === "EMERGENCY" ? "Emergency" : label(job.status)} tone={tone} />
-        </View>
-        <Text style={styles.historyBuilding}>{info.building}</Text>
-        <Text style={styles.historyMeta}>{info.location}</Text>
-        <View style={styles.historyMetaRow}>
-          <Text style={styles.historyMeta}>{job.preferredVisitDate || "Date pending"}</Text>
-          <Text style={styles.historyMeta}>{label(job.serviceType)}</Text>
-          <Text style={styles.link}>{job.status === "COMPLETED" ? "View Report" : "View Details"}</Text>
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
 function AlertRow({ item, onPress }: { item: NotificationView; onPress: () => void }) {
   const group = notificationGroup(item);
   const tone =
@@ -4153,7 +3998,7 @@ function AlertRow({ item, onPress }: { item: NotificationView; onPress: () => vo
   return (
     <Pressable style={styles.alertRow} onPress={onPress}>
       <View style={[styles.alertIcon, tone]}>
-        <AppIcon name={notificationIcon(item)} size={19} color={colors.primary} />
+        <AppIcon name={notificationIcon(item)} size={19} color={group === "Emergency" ? colors.danger : group === "Messages" ? colors.warn : group === "System" ? colors.teal : colors.info} />
       </View>
       <View style={styles.notificationCopy}>
         <View style={styles.rowBetween}>
@@ -4433,61 +4278,6 @@ function ReportsPage({
   );
 }
 
-function BottomNav({
-  screen,
-  unreadCount,
-  onChange,
-}: {
-  screen: Screen;
-  unreadCount: number;
-  onChange: (screen: Screen) => void;
-}) {
-  const navItems: Record<
-    (typeof TECHNICIAN_PRIMARY_NAV)[number],
-    { label: string; icon: IoniconName; badge?: number }
-  > = {
-    dashboard: { label: "Home", icon: "home-outline" },
-    jobs: { label: "Jobs", icon: "briefcase-outline" },
-    visits: { label: "Visits", icon: "calendar-outline" },
-    notifications: { label: "Alerts", icon: "notifications-outline", badge: unreadCount },
-    history: { label: "History", icon: "time-outline" },
-    profile: { label: "Profile", icon: "person-outline" },
-  };
-  const items = TECHNICIAN_PRIMARY_NAV.map((screen) => ({
-    screen,
-    ...navItems[screen],
-  }));
-  const activeScreen = screen === "reports" ? "dashboard" : screen;
-  return (
-    <View style={styles.nav}>
-      {items.map((item) => (
-        <Pressable
-          key={item.screen}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: activeScreen === item.screen }}
-          accessibilityLabel={item.label}
-          style={styles.navItem}
-          onPress={() => onChange(item.screen)}
-        >
-          <View>
-            <AppIcon
-              name={item.icon}
-              size={21}
-              color={activeScreen === item.screen ? colors.info : colors.muted}
-            />
-            {item.badge ? <Text style={styles.navBadge}>{item.badge > 9 ? "9+" : item.badge}</Text> : null}
-          </View>
-          <Text
-            style={[styles.navText, activeScreen === item.screen && styles.navActive]}
-          >
-            {item.label}
-          </Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
 function Input(
   props: React.ComponentProps<typeof TextInput> & { label: string },
 ) {
@@ -4497,6 +4287,7 @@ function Input(
       <Text style={styles.inputLabel}>{inputLabel}</Text>
       <TextInput
         {...rest}
+        accessibilityLabel={props.accessibilityLabel ?? inputLabel}
         style={[styles.input, props.multiline && styles.textarea]}
         placeholderTextColor={colors.muted}
       />

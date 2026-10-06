@@ -1,7 +1,10 @@
+import AvailabilityPicker from "../components/AvailabilityPicker";
+import { useGreeting } from "../hooks/useGreeting";
+import { typographyStyles as appTypography } from "../theme/typography";
 import React from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { RequestView, TechnicianDashboard, VisitView } from "../types/technician";
+import type { RequestView, TechnicianDashboard, VisitView, AvailabilityStatus } from "../types/technician";
 
 type Icon = React.ComponentProps<typeof Ionicons>["name"];
 type Props = {
@@ -11,6 +14,7 @@ type Props = {
   loading: boolean;
   unreadCount: number;
   onRefresh: () => void;
+  onAvailability: (value: AvailabilityStatus) => Promise<void>;
   onJobs: () => void;
   onJob: (job: RequestView) => void;
   onVisits: () => void;
@@ -32,8 +36,7 @@ export default function DashboardScreen(props: Props) {
   const wide = width >= 720 && fontScale < 1.4;
   const columns = wide ? 3 : 2;
   const cardWidth = columns === 3 ? "31%" : "47%";
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = useGreeting();
   const profile = dashboard?.profile;
   const name = readable(profile?.email?.split("@")[0].replace(/^tech[._-]/i, "") || profile?.employeeId || "Technician");
   const today = new Date();
@@ -61,7 +64,7 @@ export default function DashboardScreen(props: Props) {
     <ScrollView style={s.scroll} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={loading && !!dashboard} onRefresh={props.onRefresh} tintColor={c.blue} />}>
       <View style={s.top}>
-        <View style={s.brand}><Text style={s.brandMark}>V</Text><View><Text style={s.brandName}>VALOR</Text><Text style={s.brandMeta}>TECHNICIAN</Text></View></View>
+        <Text style={{ ...appTypography.screenTitle, color: c.navy }}>Home</Text>
         <View style={s.topActions}>
           <Pressable accessibilityRole="button" accessibilityLabel="Refresh dashboard" disabled={loading} onPress={props.onRefresh} style={s.iconButton}><Ionicons name="refresh-outline" size={22} color={c.teal} /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={`Notifications, ${props.unreadCount} unread`} onPress={props.onNotifications} style={s.iconButton}>
@@ -76,7 +79,7 @@ export default function DashboardScreen(props: Props) {
         <Text style={s.heroTitle}>Your workday,{"\n"}at a glance.</Text>
         <Text style={s.heroDescription}>Manage your jobs, plan your visits and keep customers informed.</Text>
         <View style={s.heroFooter}>
-          <View style={s.availability}><Ionicons name={profile?.availabilityStatus === "AVAILABLE" ? "checkmark-circle" : "time-outline"} size={16} color={c.navy} /><Text style={s.availabilityText}>{readable(profile?.availabilityStatus)}</Text></View>
+          <AvailabilityPicker value={profile?.availabilityStatus} onSave={props.onAvailability} />
           <Text style={s.employee}>{profile?.employeeId || "Valor service team"}</Text>
         </View>
       </View>
@@ -118,17 +121,17 @@ function ActionLink({ label, onPress }: { label: string; onPress: () => void }) 
 const s = StyleSheet.create({
   scroll: { flex: 1 }, content: { padding: 16, paddingBottom: 32, gap: 16 }, flex: { flex: 1, minWidth: 0 },
   top: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
-  brand: { flexDirection: "row", alignItems: "center", gap: 8 }, brandMark: { color: "#F6A800", fontSize: 32, fontWeight: "700" }, brandName: { color: c.navy, fontSize: 21, fontWeight: "700", letterSpacing: 2 }, brandMeta: { color: c.muted, fontSize: 10, letterSpacing: 1.5 },
+  brand: { flexDirection: "row", alignItems: "center", gap: 8 }, brandMark: { color: "#F6A800", fontSize: 32, fontWeight: "700" }, brandName: { color: c.navy, fontSize: 21, fontWeight: "700", letterSpacing: 2 }, brandMeta: { ...appTypography.secondary, color: c.muted, letterSpacing: 1.5 },
   topActions: { flexDirection: "row", gap: 4 }, iconButton: { minWidth: 44, minHeight: 48, alignItems: "center", justifyContent: "center" }, profileIcon: { backgroundColor: "#EAF2FF", borderRadius: 24 },
-  notificationBadge: { position: "absolute", top: 2, right: 0, borderRadius: 10, minWidth: 18, padding: 2, backgroundColor: c.red, color: "white", fontSize: 11, textAlign: "center" },
-  hero: { backgroundColor: c.navy, borderRadius: 20, padding: 24, gap: 12 }, greeting: { color: "#DCE8F7", fontSize: 16, lineHeight: 24 }, heroTitle: { color: "white", fontSize: 28, lineHeight: 36, fontWeight: "600" }, heroDescription: { color: "#DCE8F7", fontSize: 14, lineHeight: 22, maxWidth: 520 }, heroFooter: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 },
-  availability: { backgroundColor: "#EAF7EF", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 6 }, availabilityText: { color: c.navy, fontSize: 13, fontWeight: "700" }, employee: { color: "#DCE8F7", fontSize: 13 }, area: { flexDirection: "row", gap: 6, alignItems: "center" },
-  section: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }, heading: { color: c.navy, fontSize: 19, fontWeight: "600" }, grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  metric: { flexGrow: 1, borderRadius: 14, padding: 16, backgroundColor: "white", borderWidth: 1, borderColor: c.border, minHeight: 126, gap: 8 }, metricValue: { color: c.navy, fontSize: 26, fontWeight: "600" }, metricLabel: { color: c.muted, fontSize: 13, lineHeight: 19 },
-  linkButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4 }, link: { color: c.blue, fontWeight: "700", fontSize: 13 },
-  empty: { backgroundColor: "white", borderWidth: 1, borderColor: c.border, borderRadius: 16, alignItems: "center", padding: 24, gap: 10 }, emptyText: { color: c.muted, fontSize: 14, lineHeight: 22, textAlign: "center", maxWidth: 440 },
-  cardTitle: { color: c.navy, fontSize: 15, lineHeight: 22, fontWeight: "700", flexShrink: 1 }, meta: { color: c.muted, fontSize: 14, lineHeight: 21, flexShrink: 1 }, caption: { color: c.muted, fontSize: 12, lineHeight: 18, flexShrink: 1 },
-  job: { backgroundColor: "white", borderRadius: 14, borderWidth: 1, borderColor: c.border, padding: 16, gap: 8 }, jobTop: { flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }, jobId: { color: c.blue, fontSize: 12, fontWeight: "700" }, status: { color: c.teal, backgroundColor: "#E7F5F3", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, fontSize: 12 }, emergency: { color: c.red, backgroundColor: "#FFF0F0" }, jobBottom: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  notificationBadge: { ...appTypography.secondary, position: "absolute", top: 2, right: 0, borderRadius: 10, minWidth: 18, padding: 2, backgroundColor: c.red, color: "white", textAlign: "center" },
+  hero: { backgroundColor: c.navy, borderRadius: 20, padding: 24, gap: 12 }, greeting: { ...appTypography.body, color: "#DCE8F7" }, heroTitle: { ...appTypography.screenTitle, color: "white" }, heroDescription: { ...appTypography.body, color: "#DCE8F7", maxWidth: 520 }, heroFooter: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 },
+  availability: { backgroundColor: "#EAF7EF", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 6 }, availabilityText: { ...appTypography.secondary, color: c.navy }, employee: { ...appTypography.secondary, color: "#DCE8F7" }, area: { flexDirection: "row", gap: 6, alignItems: "center" },
+  section: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }, heading: { ...appTypography.sectionHeading, color: c.navy }, grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  metric: { flexGrow: 1, borderRadius: 14, padding: 16, backgroundColor: "white", borderWidth: 1, borderColor: c.border, minHeight: 126, gap: 8 }, metricValue: { ...appTypography.screenTitle, color: c.navy }, metricLabel: { ...appTypography.secondary, color: c.muted },
+  linkButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4 }, link: { ...appTypography.button, color: c.blue },
+  empty: { backgroundColor: "white", borderWidth: 1, borderColor: c.border, borderRadius: 16, alignItems: "center", padding: 24, gap: 10 }, emptyText: { ...appTypography.body, color: c.muted, textAlign: "center", maxWidth: 440 },
+  cardTitle: { ...appTypography.cardTitle, color: c.navy, flexShrink: 1 }, meta: { ...appTypography.secondary, color: c.muted, flexShrink: 1 }, caption: { ...appTypography.caption, color: c.muted, flexShrink: 1 },
+  job: { backgroundColor: "white", borderRadius: 14, borderWidth: 1, borderColor: c.border, padding: 16, gap: 8 }, jobTop: { flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }, jobId: { ...appTypography.secondary, color: c.blue }, status: { ...appTypography.secondary, color: c.teal, backgroundColor: "#E7F5F3", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }, emergency: {  color: c.red, backgroundColor: "#FFF0F0" }, jobBottom: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   visit: { backgroundColor: "white", borderWidth: 1, borderColor: c.border, borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 }, visitIcon: { backgroundColor: "#EAF2FF", borderRadius: 12, padding: 12 },
   actionIcon: { width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center" },
   action: { flexGrow: 1, backgroundColor: "white", borderWidth: 1, borderColor: c.border, borderRadius: 14, padding: 16, gap: 10 }, assistance: { flexGrow: 1, flexBasis: 280, backgroundColor: "#EAF2FF", borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 }, emergencySurface: { backgroundColor: "#FFF0F0" }, safety: { borderRadius: 14, padding: 16, backgroundColor: "#EAF7EF", flexDirection: "row", alignItems: "center", gap: 12 },

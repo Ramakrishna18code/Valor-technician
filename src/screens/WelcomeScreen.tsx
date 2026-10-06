@@ -1,3 +1,5 @@
+import BrandLogo from "../components/BrandLogo";
+import { typographyStyles as appTypography } from "../theme/typography";
 import React from "react";
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -21,6 +23,7 @@ export default function WelcomeScreen({ onGetStarted, onSignIn }: {
         </View>
         <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
           <View style={s.hero}>
+            <View style={{ marginBottom: 20 }}><BrandLogo width={170} showCompanyName /></View>
             <View style={s.portrait}>
               <Image source={require("../../assets/valor-field-technician.png")} style={s.illustration} resizeMode="contain" accessibilityLabel="Valor service technician in a navy and gold uniform holding a wrench and diagnostic tablet" />
             </View>
@@ -30,7 +33,7 @@ export default function WelcomeScreen({ onGetStarted, onSignIn }: {
           <Pressable accessibilityRole="button" onPress={onGetStarted} style={({ pressed }) => [s.primary, pressed && s.pressed]}>
             <LinearGradient colors={["#082A55", "#246DE3"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.fill}>
               <Text style={s.primaryText}>Get Started</Text>
-              <Ionicons name="arrow-forward" size={24 * scale} color="#FFFFFF" />
+              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
             </LinearGradient>
           </Pressable>
           <View style={s.divider}><View style={s.line} /><Text style={s.or}>Or</Text><View style={s.line} /></View>
@@ -63,21 +66,21 @@ const makeStyles = (r: number) => StyleSheet.create({
   hero: { alignItems: "center", marginBottom: 42 * r },
   portrait: { width: 208 * r, height: 208 * r, borderRadius: 104 * r, backgroundColor: "#EAF2FF", overflow: "hidden", marginBottom: 34 * r },
   illustration: { width: 208 * r, height: 208 * r },
-  title: { fontFamily: serif, fontWeight: "700", fontSize: 38 * r, lineHeight: 46 * r, color: "#102033", textAlign: "center" },
-  subtitle: { fontFamily: serif, fontSize: 18 * r, lineHeight: 30 * r, color: "#667A98", textAlign: "center", marginTop: 14 * r },
-  primary: { borderRadius: 42 * r, overflow: "hidden" },
-  fill: { minHeight: Math.max(56, 80 * r), flexDirection: "row", gap: 14 * r, justifyContent: "center", alignItems: "center" },
-  primaryText: { fontFamily: serif, fontWeight: "700", fontSize: 21 * r, color: "#FFFFFF" },
+  title: { ...appTypography.screenTitle, color: "#102033", textAlign: "center" },
+  subtitle: { ...appTypography.body, color: "#667A98", textAlign: "center", marginTop: 14 * r },
+  primary: { borderRadius: 25, overflow: "hidden", width: "100%", maxWidth: 320, alignSelf: "center" },
+  fill: { minHeight: 50, flexDirection: "row", gap: 14 * r, justifyContent: "center", alignItems: "center" },
+  primaryText: { ...appTypography.button, color: "#FFFFFF" },
   pressed: { opacity: 0.88, transform: [{ scale: 0.99 }] },
-  divider: { flexDirection: "row", alignItems: "center", gap: 20 * r, height: 92 * r },
+  divider: { flexDirection: "row", alignItems: "center", gap: 20 * r, height: 54 },
   line: { flex: 1, height: 1, backgroundColor: "#E8EEF5" },
-  or: { color: "#667A98", fontFamily: serif, fontSize: 16 * r },
-  social: { minHeight: Math.max(48, 72 * r), borderRadius: 38 * r, borderWidth: 1, borderColor: "#D7E1EE", backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 14 * r, marginBottom: 16 * r },
-  socialText: { fontFamily: serif, fontSize: 18 * r, color: "#102033" },
+  or: { ...appTypography.body, color: "#667A98" },
+  social: { minHeight: 48, borderRadius: 38 * r, borderWidth: 1, borderColor: "#D7E1EE", backgroundColor: "#F0F5FB", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 14 * r, marginBottom: 16 * r },
+  socialText: { ...appTypography.button, color: "#102033" },
   googleFrame: { width: 36 * r, height: 36 * r, overflow: "hidden" },
   google: { position: "absolute", width: 166 * r, height: 93.5 * r, left: -65.9 * r, top: -29.1 * r },
-  availability: { color: "#667A98", fontFamily: serif, fontSize: Math.max(11, 14 * r), lineHeight: 18 * r, textAlign: "center" },
-  footer: { flexGrow: 1, flexDirection: "row", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "center", gap: 6 * r, paddingTop: 80 * r },
-  footerText: { color: "#667A98", fontFamily: serif, fontSize: Math.max(12, 16 * r), lineHeight: 24 * r },
-  link: { color: "#246DE3", fontFamily: serif, fontWeight: "700", fontSize: Math.max(12, 16 * r), lineHeight: 24 * r },
+  availability: { ...appTypography.secondary, color: "#667A98", textAlign: "center" },
+  footer: { flexGrow: 1, flexDirection: "row", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "center", gap: 6 * r, paddingTop: 24 },
+  footerText: { ...appTypography.secondary, color: "#667A98" },
+  link: { ...appTypography.button, color: "#246DE3" },
 });

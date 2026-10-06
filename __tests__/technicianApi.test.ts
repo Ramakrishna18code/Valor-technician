@@ -258,12 +258,30 @@ describe('canonical technician API', () => {
   });
 
   it('logs out through the canonical refresh-token route and clears local credentials', async () => {
-    const calls = captureApi(() => null);
+    const calls = captureApi(() => {
+      expect(store.accessToken).toBe('');
+      expect(store.refreshToken).toBe('');
+      return null;
+    });
 
     await technicianApi.logout();
 
     expect(calls[0]).toMatchObject({method: 'post', url: '/api/v1/auth/logout'});
     expect(JSON.parse(calls[0].data as string)).toEqual({refreshToken: 'refresh-token'});
+    expect(await tokenStorage.getTokens()).toBeNull();
+  });
+  it('clears credentials when the server rejects logout without renewing the session', async () => {
+    rejectApi('Session expired', 401);
+    const save = jest.spyOn(tokenStorage, 'saveTokens');
+    await technicianApi.logout();
+    expect(await tokenStorage.getTokens()).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    save.mockRestore();
+  });
+
+  it('clears credentials when the logout server is unavailable', async () => {
+    api.defaults.adapter = async () => { throw new Error('Offline'); };
+    await technicianApi.logout();
     expect(await tokenStorage.getTokens()).toBeNull();
   });
 });

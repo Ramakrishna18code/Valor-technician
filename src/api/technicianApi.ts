@@ -1,3 +1,4 @@
+import type { Place } from "../maps/places";
 import { environment } from "../config/environment";
 import { Platform } from "react-native";
 import { tokenStorage } from "../storage/tokens";
@@ -73,6 +74,11 @@ async function attachmentForm(file: UploadFile) {
 }
 
 export const technicianApi = {
+  searchPlaces: (q: string) => requestData<Place[]>({ method: "GET", url: `/api/v1/locations/search?q=${encodeURIComponent(q)}` }),
+  getProfilePhoto: () => requestData<{ dataUri: string | null }>({ method: "GET", url: "/api/v1/profile/photo" }),
+  async uploadProfilePhoto(file: UploadFile) { return requestData<{ dataUri: string | null }>({ method: "POST", url: "/api/v1/profile/photo", data: await attachmentForm(file), headers: Platform.OS === "web" ? undefined : { "Content-Type": "multipart/form-data" } }); },
+  removeProfilePhoto: () => requestData<{ dataUri: string | null }>({ method: "DELETE", url: "/api/v1/profile/photo" }),
+  completionOtp: (id: number) => requestData<CompletionOtpState | null>({ method: "GET", url: `/api/v1/service-requests/${id}/completion-otp` }),
   async login(input: LoginInput) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -118,19 +124,22 @@ export const technicianApi = {
   },
 
   async logout() {
-    const refreshToken = await tokenStorage.getRefreshToken();
-    if (refreshToken) {
-      try {
-        await requestData<null>({
-          method: "POST",
-          url: "/api/v1/auth/logout",
-          data: { refreshToken },
-        });
-      } catch {
-        // Logout should always clear local state, even if the backend token is already invalid.
-      }
-    }
+    const tokens = await tokenStorage.getTokens();
+    // End the local session before contacting the server. A rejected logout must
+    // not refresh the credentials, and offline devices must still sign out.
     await tokenStorage.clear();
+    if (!tokens?.refreshToken) return;
+    try {
+      await requestData<null>({
+        method: "POST",
+        url: "/api/v1/auth/logout",
+        data: { refreshToken: tokens.refreshToken },
+        headers: { Authorization: `Bearer ${tokens.accessToken}` },
+        timeout: 5_000,
+      });
+    } catch {
+      // Server revocation is best effort once the local credentials are removed.
+    }
   },
 
   dashboard() {
@@ -181,6 +190,8 @@ export const technicianApi = {
       url: `/api/v1/technician/me/jobs/${id}`,
     });
   },
+
+  acceptAssignment(id: number, assignmentId: number) { return requestData<JobDetail>({ method: "POST", url: `/api/v1/service-requests/${id}/assignments/${assignmentId}/accept` }); },
 
   transition(id: number, toStatus: RequestStatus, notes?: string) {
     return requestData<JobDetail>({

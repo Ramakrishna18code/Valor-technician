@@ -1,5 +1,6 @@
+import { typographyStyles as appTypography } from "../theme/typography";
 import React, { useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, ActivityIndicator, Animated, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, AccessibilityInfo, ActivityIndicator, Animated, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -20,11 +21,11 @@ export default function SwipeOtp({ onRequest, resend = false, onContinue }: { on
     return () => { active = false; subscription.remove(); };
   }, []);
   useEffect(() => {
-    const animation = Animated.timing(success, { toValue: sent ? 1 : 0, duration: reduceMotion ? 0 : 350, useNativeDriver: true });
+    const animation = Animated.timing(success, { toValue: sent ? 1 : 0, duration: reduceMotion ? 0 : 350, useNativeDriver: Platform.OS !== "web" });
     animation.start();
     return () => animation.stop();
   }, [sent, success, reduceMotion]);
-  const reset = () => Animated.spring(offset, { toValue: 0, useNativeDriver: true, overshootClamping: true }).start();
+  const reset = () => Animated.spring(offset, { toValue: 0, useNativeDriver: Platform.OS !== "web", overshootClamping: true }).start();
   const submit = async () => {
     if (locked.current) return;
     locked.current = true;
@@ -86,19 +87,19 @@ const s = StyleSheet.create({
   fill: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0 },
   track: { minHeight: 68, borderRadius: 999, backgroundColor: "#082A55", borderWidth: 1, borderColor: "#234C7D", justifyContent: "center", overflow: "hidden" },
   copy: { alignItems: "center", justifyContent: "center", paddingHorizontal: 62, paddingVertical: 14, gap: 3 },
-  label: { flexShrink: 1, color: "#FFFFFF", fontSize: 13, lineHeight: 19, fontWeight: "700", textAlign: "center" },
-  labelSent: { color: "#126A3B" },
-  hint: { color: "#B7CDE8", fontSize: 10, lineHeight: 15, textAlign: "center" },
-  hintSent: { color: "#42745A" },
+  label: { ...appTypography.body, flexShrink: 1, color: "#FFFFFF", textAlign: "center" },
+  labelSent: {  color: "#126A3B" },
+  hint: { ...appTypography.secondary, color: "#B7CDE8", textAlign: "center" },
+  hintSent: {  color: "#42745A" },
   sentMark: { position: "absolute", right: 20, top: 21 },
   handle: { position: "absolute", right: 7, top: 7, width: 52, height: 52, borderRadius: 26, backgroundColor: "#EAF2FF", alignItems: "center", justifyContent: "center" },
-  feedback: { fontSize: 12, lineHeight: 19 },
-  error: { color: "#D64545" },
+  feedback: { ...appTypography.body },
+  error: {  color: "#D64545" },
   trackSent: { backgroundColor: "#E2F5EA", borderColor: "#B9DFC9" },
   handleSent: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#C5E6D3" },
   continueButton: { minHeight: 58, borderRadius: 999, backgroundColor: "#082A55", paddingVertical: 10, paddingLeft: 12, paddingRight: 20, flexDirection: "row", alignItems: "center", gap: 12 },
   continueIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#FFFFFF14", alignItems: "center", justifyContent: "center" },
-  continueText: { flex: 1, color: "#FFFFFF", fontSize: 13, lineHeight: 20, fontWeight: "600", textAlign: "center" },
+  continueText: { ...appTypography.button, flex: 1, color: "#FFFFFF", textAlign: "center" },
   pressed: { opacity: 0.85 },
   resendDisabled: { opacity: 0.5 },
 });

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Valor Technician",
+    "name": "Valor Elevators Technician",
     "slug": "valor-technician",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -12,9 +12,11 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Valor uses your location only while an active assigned job is open so customers can see your latest job location."
-        ,"NSLocationAlwaysAndWhenInUseUsageDescription": "Valor uses background location only while an active assigned job is being serviced."
-        ,"UIBackgroundModes": ["location"]
+        "NSLocationWhenInUseUsageDescription": "Valor uses your location only while an active assigned job is open so customers can see your latest job location.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Valor uses background location only while an active assigned job is being serviced.",
+        "UIBackgroundModes": [
+          "location"
+        ]
       }
     },
     "android": {
@@ -31,15 +33,20 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Valor uses your location only while an active assigned job is open so customers can see your latest job location."
-          ,"locationAlwaysAndWhenInUsePermission": "Valor uses background location only while an active assigned job is being serviced."
-          ,"isAndroidBackgroundLocationEnabled": true
-          ,"isIosBackgroundLocationEnabled": true
+          "locationWhenInUsePermission": "Valor uses your location only while an active assigned job is open so customers can see your latest job location.",
+          "locationAlwaysAndWhenInUsePermission": "Valor uses background location only while an active assigned job is being serviced.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isIosBackgroundLocationEnabled": true
         }
       ]
     ],
     "web": {
       "bundler": "metro"
+    },
+    "splash": {
+      "image": "./assets/valor-company-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F8FBFF"
     }
   }
 }

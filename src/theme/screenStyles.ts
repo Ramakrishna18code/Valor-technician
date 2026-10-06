@@ -18,7 +18,7 @@ export const colors = {
 export const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0 },
   app: { flex: 1, width: "100%", maxWidth: 1040, alignSelf: "center", minHeight: 0 },
-  center: { flex: 1, justifyContent: "center", padding: 24, gap: 14 },
+  center: { flex: 1, justifyContent: "center", padding: 24, paddingBottom: 40, gap: 14 },
   header: {
     height: 56,
     backgroundColor: colors.surface,
@@ -37,8 +37,8 @@ export const styles = StyleSheet.create({
     letterSpacing: 3,
     color: colors.primary,
   },
-  content: { padding: 16, paddingBottom: 24, gap: 16 },
-  contentFill: { flex: 1, minHeight: 0, padding: 16, paddingBottom: 16 },
+  content: { padding: 16, paddingBottom: 112, gap: 16 },
+  contentFill: { flex: 1, minHeight: 0, padding: 16, paddingBottom: 112 },
   pageHeading: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -156,7 +156,7 @@ export const styles = StyleSheet.create({
   badgeDanger: { backgroundColor: "#F9E0E0" },
   badgeMuted: { backgroundColor: "#ECEFF2" },
   badgeText: { ...appTypography.secondary, color: colors.primary },
-  jobsContent: { padding: 20, paddingBottom: 32, gap: 16, width: "100%", maxWidth: 760, alignSelf: "center" },
+  jobsContent: { padding: 20, paddingBottom: 128, gap: 16, width: "100%", maxWidth: 760, alignSelf: "center" },
   jobsIntro: { gap: 6 },
   jobsDescription: { ...appTypography.body, color: colors.muted },
   jobsSearchField: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 14, backgroundColor: colors.surface },
@@ -860,7 +860,7 @@ export const styles = StyleSheet.create({
     marginVertical: 8,
     fontWeight: "700",
   },
-  detailContent: { padding: 16, paddingBottom: 24, gap: 12, backgroundColor: colors.background, width: "100%", maxWidth: 760, alignSelf: "center" },
+  detailContent: { padding: 16, paddingBottom: 128, gap: 12, backgroundColor: colors.background, width: "100%", maxWidth: 760, alignSelf: "center" },
   detailHeading: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1218,9 +1218,10 @@ export const styles = StyleSheet.create({
     padding: 30,
   },
   authSafe: { flex: 1, backgroundColor: colors.surface, paddingTop: Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0 },
-  authFrame: { flex: 1, width: "100%", maxWidth: 600, alignSelf: "center", backgroundColor: colors.surface },
+  authFrame: { flex: 1, minHeight: 0, width: "100%", alignSelf: "center", backgroundColor: colors.surface },
   authTop: {
     minHeight: 72,
+    paddingTop: 16,
     paddingHorizontal: 20,
     flexDirection: "row",
     alignItems: "center",
@@ -1273,7 +1274,7 @@ export const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: 2,
   },
-  authContent: { width: "100%", maxWidth: 520, alignSelf: "center", paddingHorizontal: 24, paddingTop: 8, paddingBottom: 36 },
+  authContent: { width: "100%", maxWidth: 640, alignSelf: "center", paddingHorizontal: 24, paddingTop: 24, paddingBottom: 36 },
   authTitle: { ...appTypography.screenTitle,
     color: colors.primary,
     marginBottom: 8,

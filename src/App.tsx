@@ -889,8 +889,11 @@ export default function App() {
             page={notifications}
             onRefresh={loadCore}
             onRead={async (id) => {
+              const linkedId = Number(notifications?.items.find(item => item.id === id)?.message.match(/request\s*#(\d+)/i)?.[1]);
               await technicianApi.markNotificationRead(id);
               await loadCore();
+              const linkedJob = overviewJobs.find(job => job.id === linkedId);
+              if (linkedJob) await openJob(linkedJob);
             }}
             onMarkAll={async () => {
               for (const item of notifications?.items ?? [])
@@ -937,8 +940,11 @@ export default function App() {
             page={notifications}
             onRefresh={loadCore}
             onRead={async (id) => {
+              const linkedId = Number(notifications?.items.find(item => item.id === id)?.message.match(/request\s*#(\d+)/i)?.[1]);
               await technicianApi.markNotificationRead(id);
               await loadCore();
+              const linkedJob = overviewJobs.find(job => job.id === linkedId);
+              if (linkedJob) await openJob(linkedJob);
             }}
             onMarkAll={async () => {
               for (const item of notifications?.items ?? [])
@@ -2997,10 +3003,10 @@ function CompletionOtpPanel({
       </Pressable>
       {state && state.status !== "VERIFIED" ? (
         <>
-          <Input label="Customer OTP" value={otp} onChangeText={setOtp} />
+          <Input label="Customer OTP" value={otp} onChangeText={value => setOtp(value.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" maxLength={6} placeholder="6-digit code" editable={state.status === "PENDING"} />
           <Pressable
             style={styles.primaryButton}
-            disabled={otp.length < 4}
+            disabled={otp.length !== 6 || state.status !== "PENDING"}
             onPress={() => onVerify(state.id, otp)}
           >
             <Text style={styles.primaryText}>Verify OTP</Text>

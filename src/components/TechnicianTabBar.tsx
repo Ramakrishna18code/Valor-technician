@@ -86,8 +86,8 @@ export default function TechnicianTabBar({ screen, unreadCount, onChange }: {
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: "#F5F7FB", paddingTop: 6, paddingBottom: 12, paddingHorizontal: 10, flexShrink: 0 },
-  bar: { height: 80 },
+  container: { backgroundColor: "#F5F7FB", paddingTop: 6, paddingBottom: Platform.OS === "android" ? 28 : 12, paddingHorizontal: 10, flexShrink: 0, minHeight: Platform.OS === "android" ? 114 : 98 },
+  bar: { height: 80, minHeight: 80 },
   surface: { position: "absolute", top: 14, bottom: 0, left: 0, right: 0, backgroundColor: "#EDF4FC", borderRadius: 24, shadowColor: "#173451", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.10, shadowRadius: 14, elevation: 5 },
   notch: { position: "absolute", left: 0, top: -10, width: 60, height: 60, borderRadius: 30, backgroundColor: "#F5F7FB" },
   activeButton: { position: "absolute", top: 12, left: 10, width: 40, height: 40, borderRadius: 20, shadowColor: "#164D91", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 5, elevation: 4 },

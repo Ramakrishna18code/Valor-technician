@@ -11,6 +11,10 @@ Legacy `/api/technician` routes, the Java backend source in this repository,
 and any generated bare React Native Android scaffold are not the runtime path
 for this app.
 
+## Current UX Contract
+
+Job actions refresh the open job only; startup and explicit pull-to-refresh retain the core load. Dashboard cards set their target Jobs filter, including Pending. Service verification accepts the customer's persistent lift code for the assigned lift at arrival and completion; the app does not show expiry countdowns, attempt counts, resend controls, or background/live tracking. Profile location and ON_THE_WAY location are one-time coordinates only.
+
 ## Local Setup
 
 Start the canonical backend on port `8081`, then configure the Technician app:
@@ -202,3 +206,6 @@ The customer home location bar opens saved buildings, explicit place search and 
 Web maps use Leaflet and OpenStreetMap tiles with visible attribution. Set `EXPO_PUBLIC_MAP_TILE_URL` and `EXPO_PUBLIC_MAP_ATTRIBUTION` to change providers. Place search is authenticated through `/api/v1/locations/search` and `/reverse`; configure backend `MAP_GEOCODER_URL` / `MAP_GEOCODER_USER_AGENT` if using another Nominatim-compatible provider. Searches are explicit, globally throttled and cached. Provider policies: https://operations.osmfoundation.org/policies/tiles/ and https://operations.osmfoundation.org/policies/nominatim/.
 
 Native Android maps require `GOOGLE_MAPS_ANDROID_API_KEY` at build time and a new native build after adding the maps plugin. iOS uses Apple Maps. GPS requests foreground permission only when the location button is tapped (existing technician active-job tracking remains separate).
+## Current location model
+
+Technicians may save a default/profile location using the map picker. When a job is moved to `ON_THE_WAY`, the app requests one foreground GPS point and sends it with the status transition when available. The backend timestamp is authoritative and no later location loop is started. Job details show the building destination and static estimate, and navigation opens external Google Maps. Background tracking, five-minute foreground updates, live customer markers, route polylines, geofences, and dynamic ETA are de-scoped.

@@ -15,7 +15,7 @@ type Props = {
   unreadCount: number;
   onRefresh: () => void;
   onAvailability: (value: AvailabilityStatus) => Promise<void>;
-  onJobs: () => void;
+  onJobs: (filter?: number) => void;
   onJob: (job: RequestView) => void;
   onVisits: () => void;
   onNotifications: () => void;
@@ -47,15 +47,15 @@ export default function DashboardScreen(props: Props) {
   const nextVisit = [...visits].filter(visit => !terminal(visit.status) && visit.scheduledDate >= dateKey)
     .sort((a, b) => `${a.scheduledDate} ${a.startTime}`.localeCompare(`${b.scheduledDate} ${b.startTime}`))[0];
   const metrics: { label: string; value?: number; icon: Icon; color: string; action: () => void }[] = [
-    { label: "Assigned jobs", value: dashboard?.assignedJobs, icon: "briefcase-outline", color: c.blue, action: props.onJobs },
-    { label: "In progress", value: dashboard?.inProgressJobs, icon: "construct-outline", color: c.teal, action: props.onJobs },
-    { label: "Pending jobs", value: dashboard?.pendingJobs, icon: "time-outline", color: c.amber, action: props.onJobs },
+    { label: "Assigned jobs", value: dashboard?.assignedJobs, icon: "briefcase-outline", color: c.blue, action: () => props.onJobs(2) },
+    { label: "In progress", value: dashboard?.inProgressJobs, icon: "construct-outline", color: c.teal, action: () => props.onJobs(4) },
+    { label: "Pending jobs", value: dashboard?.pendingJobs, icon: "time-outline", color: c.amber, action: () => props.onJobs(1) },
     { label: "Completed this quarter", value: dashboard?.completedThisQuarter, icon: "checkmark-circle-outline", color: c.green, action: props.onHistory },
     { label: "Today's visits", value: dashboard?.todaysScheduledVisits, icon: "calendar-outline", color: c.blue, action: props.onVisits },
     { label: "Emergency jobs", value: dashboard?.emergencyJobs, icon: "alert-circle-outline", color: c.red, action: props.onEmergency },
   ];
   const actions: { title: string; detail: string; icon: Icon; color: string; background: string; onPress: () => void }[] = [
-    { title: "Assigned jobs", color: c.green, background: "#EAF7EF", detail: "View jobs and update progress", icon: "briefcase-outline", onPress: props.onJobs },
+    { title: "Assigned jobs", color: c.green, background: "#EAF7EF", detail: "View jobs and update progress", icon: "briefcase-outline", onPress: () => props.onJobs(2) },
     { title: "Visit schedule", color: "#7856C7", background: "#F1EDFB", detail: "Plan upcoming site visits", icon: "calendar-outline", onPress: props.onVisits },
     { title: "Service history", color: c.teal, background: "#E7F5F3", detail: "Review previous work", icon: "time-outline", onPress: props.onHistory },
     { title: "Reports", color: c.amber, background: "#FFF5E6", detail: "See your work summary", icon: "bar-chart-outline", onPress: props.onReports },
@@ -90,7 +90,7 @@ export default function DashboardScreen(props: Props) {
           <Ionicons name={metric.icon} size={23} color={metric.color} /><Text style={s.metricValue}>{metric.value ?? "—"}</Text><Text style={s.metricLabel}>{metric.label}</Text>
         </Pressable>)}
       </View>}
-      <View style={s.section}><Text style={s.heading}>{scheduledToday.length ? "Today's jobs" : "Assigned work"}</Text><ActionLink label="View all" onPress={props.onJobs} /></View>
+      <View style={s.section}><Text style={s.heading}>{scheduledToday.length ? "Today's jobs" : "Assigned work"}</Text><ActionLink label="View all" onPress={() => props.onJobs(0)} /></View>
       {!loading && visibleJobs.length === 0 ? <View style={s.empty}>
         <Ionicons name="checkmark-done-circle-outline" size={36} color={c.teal} /><Text style={s.cardTitle}>You're up to date</Text><Text style={s.emptyText}>No active jobs in the current list. Refresh to check for new assignments or view your job history.</Text><ActionLink label="View job history" onPress={props.onHistory} />
       </View> : visibleJobs.map(job => <Pressable key={job.id} accessibilityRole="button" onPress={() => props.onJob(job)} style={s.job}>

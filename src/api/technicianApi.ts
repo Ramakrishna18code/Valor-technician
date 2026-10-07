@@ -28,6 +28,8 @@ import type {
   TechnicianServicePayment,
 } from "../types/technician";
 
+const pageItems = (page: any) => ({ ...page, items: page?.items || page?.content || [] });
+
 export interface LoginInput {
   email: string;
   password: string;
@@ -191,13 +193,21 @@ export const technicianApi = {
     });
   },
 
+  parts(query: { q?: string; page?: number; size?: number } = {}) {
+    return requestData<any>({ method: "GET", url: "/api/v1/parts", params: { q: query.q, page: query.page ?? 0, size: query.size ?? 50 } }).then(pageItems);
+  },
+  partCategories() { return requestData<any[]>({ method: "GET", url: "/api/v1/parts/categories" }); },
+  partRequests(query: { page?: number; size?: number } = {}) { return requestData<any>({ method: "GET", url: "/api/v1/technician/me/part-requests", params: { page: query.page ?? 0, size: query.size ?? 50 } }).then(pageItems); },
+  submitPartRequest(data: unknown) { return requestData<any>({ method: "POST", url: "/api/v1/technician/me/part-requests", data }); },
+  cancelPartRequest(id: number) { return requestData<any>({ method: "POST", url: `/api/v1/technician/me/part-requests/${id}/cancel` }); },
+
   acceptAssignment(id: number, assignmentId: number) { return requestData<JobDetail>({ method: "POST", url: `/api/v1/service-requests/${id}/assignments/${assignmentId}/accept` }); },
 
-  transition(id: number, toStatus: RequestStatus, notes?: string) {
+  transition(id: number, toStatus: RequestStatus, notes?: string, startLatitude?: number, startLongitude?: number) {
     return requestData<JobDetail>({
       method: "POST",
       url: `/api/v1/service-requests/${id}/status`,
-      data: { toStatus, notes },
+      data: { toStatus, notes, startLatitude, startLongitude },
     });
   },
 
@@ -206,24 +216,6 @@ export const technicianApi = {
       method: "POST",
       url: `/api/v1/technician/me/jobs/${id}/report`,
       data: input,
-    });
-  },
-
-  updateLocation(
-    id: number,
-    input: { latitude: number; longitude: number; timestamp: string },
-  ) {
-    return requestData<LocationView>({
-      method: "POST",
-      url: `/api/v1/technician/me/jobs/${id}/location`,
-      data: input,
-    });
-  },
-
-  technicianLocation(id: number) {
-    return requestData<import("../types/technician").LocationView>({
-      method: "GET",
-      url: `/api/v1/technician/me/jobs/${id}/location`,
     });
   },
 

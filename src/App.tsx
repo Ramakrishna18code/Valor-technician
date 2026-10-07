@@ -1,4 +1,5 @@
 import JobSiteMap from "./components/JobSiteMap";
+import SiteMap from "./maps/SiteMap";
 import JobHandover from "./components/JobHandover";
 import { showJobMap, mapPoint, directionsUrl } from "./maps/location";
 import ProfilePhotoEditor from "./components/ProfilePhotoEditor";
@@ -13,6 +14,7 @@ import Dashboard from "./screens/DashboardScreen";
 import WelcomeScreen from "./screens/WelcomeScreen";
 import { ServiceHero, ServiceReveal, ServiceSection } from "./components/ServiceExperience";
 import ArrivalVerification from "./components/ArrivalVerification";
+import PartsScreen from "./screens/PartsScreen";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, styles } from "./theme/screenStyles";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -47,10 +49,6 @@ import {
 } from "./api/technicianApplicationApi";
 import { tokenStorage } from "./storage/tokens";
 import { type Screen } from "./screens/screenRegistry";
-import {
-  ensureBackgroundTracking,
-  stopBackgroundTracking,
-} from "./tracking/backgroundLocation";
 import type {
   AttachmentView,
   AvailabilityStatus,
@@ -92,13 +90,6 @@ type AuthStage =
   | "submitted"
   | "verification"
   | "approved";
-type TrackingState = {
-  active: boolean;
-  permission: "unknown" | "granted" | "denied";
-  lastSubmittedAt?: string;
-  background?: string;
-  error?: string;
-};
 type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 
 async function allTechnicianJobs() {
@@ -140,6 +131,7 @@ const JOB_FILTERS: Array<{
   statuses?: RequestStatus[];
 }> = [
   { label: "All" },
+  { label: "Pending", status: "PENDING" },
   { label: "Assigned", status: "ASSIGNED" },
   { label: "Accepted", status: "ACCEPTED" },
   { label: "In Progress", statuses: IN_PROGRESS },
@@ -168,7 +160,6 @@ const SUPPORTED_ATTACHMENT_TYPES = [
   "image/webp",
   "application/pdf",
 ];
-const LOCATION_INTERVAL_MS = 5 * 60 * 1000;
 
 const label = (value?: string | null) =>
   value
@@ -377,10 +368,6 @@ export default function App() {
   const [pendingVisitStatus, setPendingVisitStatus] = useState<
     "IN_PROGRESS" | "COMPLETED" | null
   >(null);
-  const [tracking, setTracking] = useState<TrackingState>({
-    active: false,
-    permission: "unknown",
-  });
 
   const expire = useCallback(() => {
     setSession("anonymous");
@@ -459,93 +446,12 @@ export default function App() {
     bootstrap();
   }, [bootstrap]);
 
-  useEffect(() => {
-    let cancelled = false;
-    let interval: ReturnType<typeof setInterval> | undefined;
-    const request = selectedJob?.request;
-    const trackable =
-      !!request && screen === "jobDetail" && selectedJob?.activeAssignment?.status === "ACCEPTED" && TRACKABLE.includes(request.status);
-    const submit = async () => {
-      if (!request || cancelled) return;
-      try {
-        const position = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        const timestamp = new Date().toISOString();
-        const nextLocation = await technicianApi.updateLocation(request.id, {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          timestamp,
-        });
-        if (!cancelled) setJobLocation(nextLocation);
-        if (!cancelled)
-          setTracking({
-            active: true,
-            permission: "granted",
-            lastSubmittedAt: timestamp,
-          });
-      } catch (error) {
-        if (!cancelled)
-          setTracking((current) => ({
-            ...current,
-            active: trackable,
-            error: err(error),
-          }));
-      }
-    };
-    const start = async () => {
-      if (!trackable) {
-        setTracking((current) => ({
-          ...current,
-          active: false,
-          error: undefined,
-        }));
-        await stopBackgroundTracking().catch(() => undefined);
-        return;
-      }
-      setTracking((current) => ({
-        ...current,
-        active: true,
-        error: undefined,
-      }));
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
-        if (!cancelled)
-          setTracking({
-            active: false,
-            permission: "denied",
-            error:
-              "Location permission is required while travelling to or working on an active job.",
-          });
-        return;
-      }
-      if (!cancelled)
-        setTracking((current) => ({ ...current, permission: "granted" }));
-      const background = await ensureBackgroundTracking(request.id).catch(
-        (error) => ({ started: false, state: err(error) }),
-      );
-      if (!cancelled)
-        setTracking((current) => ({
-          ...current,
-          background: background.state,
-        }));
-      await submit();
-      interval = setInterval(submit, LOCATION_INTERVAL_MS);
-    };
-    start();
-    return () => {
-      cancelled = true;
-      if (interval) clearInterval(interval);
-      if (!trackable) stopBackgroundTracking().catch(() => undefined);
-    };
-  }, [screen, selectedJob?.request.id, selectedJob?.request.status, selectedJob?.activeAssignment?.status]);
-
   const readJob = async (id: number) => {
     const detail = await technicianApi.job(id);
     const [files, nextChecklist, nextArrivalOtp, nextCompletionOtp, nextPayment, nextLocation] = await Promise.all([
-      technicianApi.attachments(id), technicianApi.checklist(id),
+        technicianApi.attachments(id), technicianApi.checklist(id),
       technicianApi.arrivalOtp(id).catch(() => null), technicianApi.completionOtp(id).catch(() => null),
-      technicianApi.servicePayment(id).catch(() => null), TRACKABLE.includes(detail.request.status) && detail.activeAssignment?.status === "ACCEPTED" ? technicianApi.technicianLocation(id).catch(() => null) : Promise.resolve(null),
+      technicianApi.servicePayment(id).catch(() => null), Promise.resolve(null),
     ]);
     return { detail, files, nextChecklist, nextArrivalOtp, nextCompletionOtp, nextPayment, nextLocation };
   };
@@ -581,8 +487,12 @@ export default function App() {
     const version = jobLoadVersion.current;
     const data = await readJob(id);
     if (version === jobLoadVersion.current) applyJob(data);
-    await loadCore();
   };
+  useEffect(() => {
+    if (screen !== "jobDetail" || !selectedJob || ["COMPLETED", "CANCELLED"].includes(selectedJob.request.status)) return undefined;
+    const timer = setInterval(() => { void refreshJob(selectedJob.request.id).catch(() => undefined); }, 5000);
+    return () => clearInterval(timer);
+  }, [screen, selectedJob?.request.id, selectedJob?.request.status]);
 
   // All assigned work is loaded once; status filters are instant and cannot race API responses.
   const loadJobs = async (index = jobFilter) => { setJobFilter(index); };
@@ -719,14 +629,14 @@ export default function App() {
             visits={visits?.items ?? []}
             loading={loading}
             onRefresh={loadCore}
-            onJobs={() => setScreen("jobs")}
+            onJobs={(filter = 0) => { setJobFilter(filter); setScreen("jobs"); }}
             onJob={openJob}
             onNotifications={() => setScreen("notifications")}
             onProfile={() => setScreen("profile")}
             onEmergency={() => setScreen("emergencyRequests")}
             onSupport={() => setScreen("support")}
             
-            onHistory={() => setScreen("history")}
+            onHistory={() => { setHistoryFilter(1); setScreen("history"); void loadHistory(1).catch((error) => setMessage(err(error))); }}
             onSafety={() => setScreen("safety")}
             onReports={() => setScreen("reports")}
             onVisits={() => setScreen("visits")}
@@ -780,7 +690,7 @@ export default function App() {
         {screen === "support" && <SupportPage profile={profile} />}
         {screen === "scanQr" && <DeferredActionPage title="Scan QR" />}
         {screen === "requestParts" && (
-          <DeferredActionPage title="Request Parts" />
+          <PartsScreen jobs={jobs?.items ?? []} onBack={() => setScreen("dashboard")} />
         )}
         {screen === "reportIssue" && <ReportIssuePage />}
         {screen === "safety" && <SafetyPage />}
@@ -791,7 +701,6 @@ export default function App() {
           <JobDetailScreen key={selectedJob.request.id}
             detail={selectedJob}
             onBackHome={() => setScreen("dashboard")}
-            tracking={tracking}
             jobLocation={jobLocation}
             attachments={attachments}
             checklist={checklist}
@@ -983,7 +892,19 @@ export default function App() {
               if (pendingStatus === "ACCEPTED" && selectedJob.activeAssignment?.status === "ASSIGNED") {
                 await technicianApi.acceptAssignment(selectedJob.request.id, selectedJob.activeAssignment.id);
               } else {
-                await technicianApi.transition(selectedJob.request.id, pendingStatus, values.notes);
+                let startLatitude: number | undefined;
+                let startLongitude: number | undefined;
+                if (pendingStatus === "ON_THE_WAY") {
+                  try {
+                    const permission = await Location.requestForegroundPermissionsAsync();
+                    if (permission.granted) {
+                      const point = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                      startLatitude = point.coords.latitude;
+                      startLongitude = point.coords.longitude;
+                    }
+                  } catch { /* Start is still recorded without coordinates when GPS is unavailable. */ }
+                }
+                await technicianApi.transition(selectedJob.request.id, pendingStatus, values.notes, startLatitude, startLongitude);
               }
               if (pendingStatus === "REACHED_SITE") {
                 try {
@@ -1037,7 +958,6 @@ export default function App() {
             setModal(null);
             setMessage("Saved successfully.");
             if (selectedJob) await refreshJob();
-            await loadCore();
           }}
           onError={(error) => {
             setMessage(err(error));
@@ -1347,6 +1267,7 @@ function TechnicianAuthFlow({
       <VerificationScreen
         application={application}
         onRefresh={refreshStatus}
+        onResubmit={() => onStage("documents")}
         onLogin={() => onStage("login")}
         loading={working}
       />
@@ -1907,18 +1828,25 @@ function SubmittedScreen({
 function VerificationScreen({
   application,
   onRefresh,
+  onResubmit,
   onLogin,
   loading,
 }: {
   application: TechnicianApplication | null;
   onRefresh: () => void;
+  onResubmit: () => void;
   onLogin: () => void;
   loading: boolean;
 }) {
+  const status = application?.status || "SUBMITTED";
+  const rejected = status === "DOCUMENTS_REJECTED" || application?.documents?.some(document => document.reviewStatus === "REJECTED");
+  const meetingMode = application?.meetingMode?.replace(/_/g, " ");
+  const meetingDate = application?.meetingAt ? new Date(application.meetingAt).toLocaleString() : null;
+  const openExternal = (url: string) => void Linking.openURL(url);
   return (
     <AuthFrame>
-      <ApplicationResultHero title="Document verification" description="Your application is with our review team. Check here for the latest update." reviewing />
-      <ApplicationReviewCard />
+      <ApplicationResultHero title="Verification status" description={rejected ? "Some documents need attention before your application can continue." : "Your application status and meeting details are shown here."} reviewing={status !== "APPROVED"} />
+      <View style={styles.reviewCard}><View style={styles.reviewRow}><Text style={styles.reviewLabel}>Application</Text><Text style={styles.reviewValue}>{label(status)}</Text></View><View style={styles.reviewRow}><Text style={styles.reviewLabel}>Meeting</Text><Text style={styles.reviewValue}>{application?.meetingRequired ? label(meetingMode) : "Not required"}</Text></View></View>
       {application?.documents?.map((document) => (
         <View key={document.id} style={styles.documentRow}>
           <View style={styles.documentIcon}><AppIcon name="document-text-outline" size={17} color={colors.info} /></View>
@@ -1928,9 +1856,11 @@ function VerificationScreen({
             </Text>
             <Text style={styles.documentMeta}>{document.originalFilename}</Text>
           </View>
-          <Text style={styles.uploaded}>Submitted</Text>
+          <View><Text style={document.reviewStatus === "REJECTED" ? styles.errorText : styles.uploaded}>{label(document.reviewStatus || "PENDING")}</Text>{document.reviewReason ? <Text style={styles.documentMeta}>{document.reviewReason}</Text> : null}</View>
         </View>
       ))}
+      {application?.meetingRequired ? <View style={styles.reviewCard}><Text style={styles.reviewLabel}>Meeting details</Text>{meetingDate ? <Text style={styles.reviewValue}>{meetingDate}</Text> : null}{application.meetingPhone ? <Text style={styles.reviewValue}>{application.meetingPhone}</Text> : null}{application.meetingLocation ? <Text style={styles.reviewValue}>{application.meetingLocation}</Text> : null}{application.meetingUrl ? <AuthButton title="Open Google Meet" onPress={() => openExternal(application.meetingUrl!)} secondary /> : null}{application.meetingMapUrl ? <AuthButton title="Open map" onPress={() => openExternal(application.meetingMapUrl!)} secondary /> : null}</View> : null}
+      {rejected ? <AuthButton title="Resubmit documents" onPress={onResubmit} secondary /> : null}
       <AuthButton
         title={loading ? "Refreshing..." : "Refresh Status"}
         onPress={onRefresh}
@@ -2239,7 +2169,6 @@ function Jobs({ items, filter, loading, onFilter, onJob, onStartJob }: {
 function JobDetailScreen({
   detail,
   onBackHome,
-  tracking,
   jobLocation,
   attachments,
   checklist,
@@ -2260,7 +2189,6 @@ function JobDetailScreen({
 }: {
   detail: JobDetail;
   onBackHome: () => void;
-  tracking: TrackingState;
   jobLocation: LocationView | null;
   attachments: AttachmentView[];
   checklist: JobChecklistView | null;
@@ -2980,36 +2908,30 @@ function CompletionOtpPanel({
   onContinue: () => void;
 }) {
   const [otp, setOtp] = useState("");
+  const [verifyError, setVerifyError] = useState("");
+  const [failedAttempts, setFailedAttempts] = useState(0);
   if (state?.status === "VERIFIED") return <View style={styles.card}><View style={styles.serviceSectionHeading}><AppIcon name="checkmark-circle" size={26} color={colors.teal} /><Text style={styles.serviceCardHeading}>Customer completion confirmed</Text></View><Text style={styles.serviceBodyText}>Verification is saved. Continue to handover to finish any remaining details.</Text><Pressable accessibilityRole="button" style={styles.servicePrimaryAction} onPress={onContinue}><Text style={styles.primaryText}>Continue to handover</Text><AppIcon name="arrow-forward" size={20} color="#FFFFFF" /></Pressable></View>;
   return (
     <View style={styles.card}>
-      <Text style={styles.sectionHeading}>Completion OTP</Text>
+      <Text style={styles.sectionHeading}>Customer completion OTP</Text>
       <Text style={styles.muted}>
-        Ask the customer for the completion code in their service screen,
-        after testing and handover are finished.
+        Ask the customer for the completion OTP shown in their service request after testing is complete.
       </Text>
-      {state ? (
-        <Info
-          title="OTP state"
-          rows={[
-            state.status,
-            state.expiresAt ? `Expires: ${state.expiresAt}` : null,
-            `Attempts remaining: ${state.attemptsRemaining}`,
-          ]}
-        />
+      {!state || state.status === "EXPIRED" ? (
+        <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={onRequest}>
+          <Text style={styles.primaryText}>{state?.status === "EXPIRED" ? "Request a new completion OTP" : "Request completion OTP"}</Text>
+        </Pressable>
       ) : null}
-      <Pressable style={styles.outlineButton} onPress={onRequest}>
-        <Text style={styles.outlineText}>Request OTP</Text>
-      </Pressable>
       {state && state.status !== "VERIFIED" ? (
         <>
-          <Input label="Customer OTP" value={otp} onChangeText={value => setOtp(value.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" maxLength={6} placeholder="6-digit code" editable={state.status === "PENDING"} />
+          <Input label="Customer OTP" value={otp} onChangeText={value => { setVerifyError(""); setOtp(value.replace(/\D/g, "").slice(0, 6)); }} keyboardType="number-pad" maxLength={6} placeholder="6-digit code" />
+          {verifyError ? <Text accessibilityRole="alert" style={styles.errorText}>{verifyError}</Text> : null}
           <Pressable
             style={styles.primaryButton}
-            disabled={otp.length !== 6 || state.status !== "PENDING"}
-            onPress={() => onVerify(state.id, otp)}
+            disabled={otp.length !== 6 || failedAttempts >= 3 || ["LOCKED", "EXPIRED"].includes(state.status)}
+            onPress={async () => { try { await onVerify(state.id, otp); setVerifyError(""); setFailedAttempts(0); } catch { const next = failedAttempts + 1; setFailedAttempts(next); setVerifyError(next >= 3 ? "Three incorrect attempts. Please wait 5 minutes before trying again." : next === 2 ? "Wrong completion OTP. One attempt remaining." : "Wrong completion OTP. Please try again."); } }}
           >
-            <Text style={styles.primaryText}>Verify OTP</Text>
+            <Text style={styles.primaryText}>Verify completion OTP</Text>
           </Pressable>
         </>
       ) : null}
@@ -3175,12 +3097,13 @@ function Notifications({
 }
 function ProfileDetailsPage({ profile, onSave }: { profile: TechnicianProfileView | null; onSave: (input: Partial<TechnicianProfileView>) => Promise<void> }) {
   const [draft, setDraft] = useState<Partial<TechnicianProfileView>>(profile ?? {});
+  const [profilePoint, setProfilePoint] = useState<{latitude: number; longitude: number} | null>(profile?.latitude != null && profile?.longitude != null ? { latitude: profile.latitude, longitude: profile.longitude } : null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const update = (key: keyof TechnicianProfileView, value: string) => setDraft(current => ({...current, [key]: value}));
   const save = async () => {
     setSaving(true); setError(null);
-    try { await onSave({dateOfBirth: draft.dateOfBirth || null, gender: draft.gender || null, address: draft.address || null, emergencyContactName: draft.emergencyContactName || null, emergencyContactPhone: draft.emergencyContactPhone || null}); }
+    try { await onSave({dateOfBirth: draft.dateOfBirth || null, gender: draft.gender || null, address: draft.address || null, latitude: profilePoint?.latitude ?? null, longitude: profilePoint?.longitude ?? null, emergencyContactName: draft.emergencyContactName || null, emergencyContactPhone: draft.emergencyContactPhone || null}); }
     catch (problem) { setError(err(problem)); } finally { setSaving(false); }
   };
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.profileContent}>
@@ -3200,6 +3123,10 @@ function ProfileDetailsPage({ profile, onSave }: { profile: TechnicianProfileVie
       <ProfileField label="Gender (optional)" value={draft.gender || ""} onChangeText={text => update("gender", text)} />
       <ProfileField wide label="Address" value={draft.address || ""} onChangeText={text => update("address", text)} />
     </View>
+    <Text style={styles.settingsSection}>Default location</Text>
+    <Text style={styles.muted}>This is a saved home/start preference for operational proximity only. Valor does not continuously track it.</Text>
+    <Pressable style={styles.greenButton} onPress={async () => { const permission = await Location.requestForegroundPermissionsAsync(); if (!permission.granted) { setError("Location permission was not granted. You can place the pin manually."); return; } const point = await Location.getCurrentPositionAsync({accuracy: Location.Accuracy.Balanced}); setProfilePoint({latitude: point.coords.latitude, longitude: point.coords.longitude}); }}><Text style={styles.primaryText}>Use current location</Text></Pressable>
+    {profilePoint ? <><SiteMap destination={profilePoint} title="Choose technician default location" onSelect={setProfilePoint} /><Text style={styles.muted}>Tap the map or drag the pin to adjust the location.</Text></> : <Text style={styles.muted}>No default location saved yet.</Text>}
     <Text style={styles.settingsSection}>Emergency contact</Text>
     <View style={styles.twoColumnForm}>
       <ProfileField label="Contact name" value={draft.emergencyContactName || ""} onChangeText={text => update("emergencyContactName", text)} />
@@ -3254,7 +3181,7 @@ function LocationPage() {
     <ScrollView contentContainerStyle={styles.profileContent}>
       <Text style={styles.jobsTitle}>Location Services</Text>
       <Text style={styles.settingsSubtitle}>
-        Location is used only while tracking an active assigned job.
+        Location is used when choosing your saved profile location or once when starting a job. Valor does not use background or continuous GPS tracking.
       </Text>
       <Info title="Current access" rows={[status]} />
       <Pressable style={styles.primaryButton} onPress={request}>
@@ -3308,7 +3235,7 @@ function AboutPage() {
         title="Technician app"
         rows={[
           "Built for safe, clear, and reliable field service work.",
-          "Use the shared Valor platform APIs for jobs, visits, reports, checklists, and tracking.",
+          "Use the shared Valor platform APIs for jobs, visits, reports, and checklists.",
         ]}
       />
       <Info

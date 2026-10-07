@@ -79,6 +79,8 @@ export interface TechnicianProfileView {
   address?: string | null;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface TechnicianDashboard {
@@ -108,6 +110,15 @@ export interface RequestView {
   preferredTimeSlot?: string | null;
   estimatedCompletionMinutes?: number | null;
   completedAt?: string | null;
+  buildingName?: string | null;
+  buildingAddress?: string | null;
+  buildingLatitude?: number | null;
+  buildingLongitude?: number | null;
+  startLatitude?: number | null;
+  startLongitude?: number | null;
+  startedAt?: string | null;
+  arrivalEstimateMinutes?: number | null;
+  arrivalEstimatedAt?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
   [key: string]: unknown;

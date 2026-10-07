@@ -16,7 +16,7 @@ export const colors = {
   yellow: "#F6A800",
 };
 export const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0 },
+  safe: { flex: 1, backgroundColor: colors.background },
   app: { flex: 1, width: "100%", maxWidth: 1040, alignSelf: "center", minHeight: 0 },
   center: { flex: 1, justifyContent: "center", padding: 24, paddingBottom: 40, gap: 14 },
   header: {
@@ -156,7 +156,7 @@ export const styles = StyleSheet.create({
   badgeDanger: { backgroundColor: "#F9E0E0" },
   badgeMuted: { backgroundColor: "#ECEFF2" },
   badgeText: { ...appTypography.secondary, color: colors.primary },
-  jobsContent: { padding: 20, paddingBottom: 128, gap: 16, width: "100%", maxWidth: 760, alignSelf: "center" },
+  jobsContent: { padding: 20, paddingBottom: 32, gap: 16, width: "100%", maxWidth: 760, alignSelf: "center" },
   jobsIntro: { gap: 6 },
   jobsDescription: { ...appTypography.body, color: colors.muted },
   jobsSearchField: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 14, backgroundColor: colors.surface },

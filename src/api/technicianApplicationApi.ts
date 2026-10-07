@@ -7,6 +7,9 @@ export type TechnicianApplicationDocument = {
   contentType: string;
   fileSize: number;
   createdAt?: string;
+  reviewStatus?: "PENDING" | "VERIFIED" | "REJECTED" | string;
+  reviewReason?: string | null;
+  reviewedAt?: string | null;
 };
 
 export type TechnicianApplication = {
@@ -33,10 +36,29 @@ export type TechnicianApplication = {
     | "UNDER_REVIEW"
     | "APPROVED"
     | "REJECTED"
+    | "DOCUMENTS_PENDING"
+    | "UNDER_DOCUMENT_REVIEW"
+    | "DOCUMENTS_REJECTED"
+    | "DOCUMENTS_VERIFIED"
+    | "MEETING_REQUIRED"
+    | "MEETING_SCHEDULED"
+    | "MEETING_COMPLETED"
+    | "SUSPENDED"
     | string;
   otpVerifiedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  meetingRequired?: boolean;
+  meetingMode?: string | null;
+  meetingAt?: string | null;
+  meetingUrl?: string | null;
+  meetingPhone?: string | null;
+  meetingLocation?: string | null;
+  meetingLatitude?: number | null;
+  meetingLongitude?: number | null;
+  meetingMapUrl?: string | null;
+  meetingNotes?: string | null;
+  meetingCompletedAt?: string | null;
   documents: TechnicianApplicationDocument[];
 };
 

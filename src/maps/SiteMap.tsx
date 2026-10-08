@@ -1,79 +1,16 @@
-import React, { useEffect, useRef } from "react";
-import { View } from "react-native";
-import MapView, { Marker, Polyline } from "react-native-maps";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Linking, Text, View } from "react-native";
+import { WebView } from "react-native-webview";
 import type { SiteMapProps } from "./SiteMap.types";
-const lightStyle = [{
-  elementType: "geometry",
-  stylers: [{
-    color: "#f1f5f8"
-  }]
-}, {
-  elementType: "labels.text.fill",
-  stylers: [{
-    color: "#52697d"
-  }]
-}, {
-  featureType: "water",
-  elementType: "geometry",
-  stylers: [{
-    color: "#cce4f4"
-  }]
-}, {
-  featureType: "road",
-  elementType: "geometry",
-  stylers: [{
-    color: "#ffffff"
-  }]
-}, {
-  featureType: "poi.park",
-  elementType: "geometry",
-  stylers: [{
-    color: "#e2f1e6"
-  }]
-}];
-export default function SiteMap({
-  destination,
-  current,
-  route = [],
-  title = "Site map",
-  height = 230,
-  onSelect
-}: SiteMapProps) {
-  const ref = useRef<MapView>(null),
-    first = destination || current;
-  const fit = () => {
-    const points = [destination, current, ...route].filter(Boolean) as NonNullable<typeof destination>[];
-    if (points.length === 1) ref.current?.animateToRegion({
-      ...points[0],
-      latitudeDelta: .012,
-      longitudeDelta: .012
-    }, 200);else if (points.length > 1) ref.current?.fitToCoordinates(points, {
-      edgePadding: {
-        top: 35,
-        right: 35,
-        bottom: 35,
-        left: 35
-      },
-      animated: false
-    });
-  };
-  useEffect(() => {
-    fit();
-  }, [JSON.stringify([destination, current, route])]);
-  if (!first) return null;
-  return <View style={{
-    height,
-    borderRadius: 20,
-    overflow: "hidden"
-  }}><MapView ref={ref} accessibilityLabel={title} style={{
-      flex: 1
-    }} customMapStyle={lightStyle} initialRegion={{
-      ...first,
-      latitudeDelta: .012,
-      longitudeDelta: .012
-    }} onMapReady={fit} onPress={event => onSelect?.(event.nativeEvent.coordinate)} showsCompass showsScale>
-    {destination && <Marker coordinate={destination} title="Service site" pinColor="#187F6B" draggable={!!onSelect} onDragEnd={event => onSelect?.(event.nativeEvent.coordinate)} />}
-    {current && <Marker coordinate={current} title="Your latest location" pinColor="#286FE5" />}
-    {route.length > 1 && <Polyline coordinates={route} strokeColor="#286FE5" strokeWidth={5} />}
-  </MapView></View>;
+import { leafletScript, leafletCss } from "./leafletRuntime";
+import { mapPoint } from "./location";
+export default function SiteMap({ destination, current, route = [], title = "Site map", height = 230, onSelect }: SiteMapProps) {
+ const web = useRef<WebView>(null); const [ready,setReady]=useState(false),[error,setError]=useState(false);
+ const payload=JSON.stringify({ destination: destination && mapPoint(destination.latitude,destination.longitude), current: current && mapPoint(current.latitude,current.longitude), route: route.map(p=>mapPoint(p.latitude,p.longitude)).filter(Boolean), selectable:!!onSelect });
+ const tiles=process.env.EXPO_PUBLIC_MAP_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+ const attribution=process.env.EXPO_PUBLIC_MAP_ATTRIBUTION || '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+ const html=useMemo(()=> '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><style>'+leafletCss+' html,body,#map{height:100%;width:100%;margin:0;background:#eaf1f5}.leaflet-control-zoom{border-radius:12px!important;overflow:hidden}.leaflet-control-zoom a{color:#1b4363;background:#f8fbff}.leaflet-control-attribution{font-size:10px}.site-pin{background:#187f6b;border:3px solid white;border-radius:50% 50% 50% 0;box-shadow:0 3px 10px #173c5540}</style></head><body><div id="map" role="region" aria-label="Service map"></div><script>'+leafletScript+'</script><script>var map=L.map("map",{zoomControl:false});L.control.zoom({position:"topright"}).addTo(map);var layer=L.layerGroup().addTo(map);var tiles=L.tileLayer('+JSON.stringify(tiles)+',{maxZoom:19,attribution:'+JSON.stringify(attribution)+'}).addTo(map);tiles.on("tileerror",function(){window.ReactNativeWebView.postMessage(JSON.stringify({type:"tileError"}))});tiles.on("tileload",function(){window.ReactNativeWebView.postMessage(JSON.stringify({type:"tileReady"}))});var selectable=false;function selected(latlng){if(selectable)window.ReactNativeWebView.postMessage(JSON.stringify({type:"select",latitude:latlng.lat,longitude:latlng.lng}))}map.on("click",function(e){selected(e.latlng)});window.updateSite=function(data){layer.clearLayers();selectable=data.selectable;var points=[];if(data.destination){var d=data.destination;points.push([d.latitude,d.longitude]);L.marker([d.latitude,d.longitude],{draggable:selectable,icon:L.divIcon({className:"site-pin",iconSize:[26,26],iconAnchor:[13,23]})}).bindTooltip("Service site").on("dragend",function(e){selected(e.target.getLatLng())}).addTo(layer);}if(data.current){var c=data.current;points.push([c.latitude,c.longitude]);L.circleMarker([c.latitude,c.longitude],{radius:8,fillColor:"#286fe5",color:"white",weight:3,fillOpacity:1}).bindTooltip("Latest location").addTo(layer);}if(data.route.length>1){var line=data.route.map(function(p){return [p.latitude,p.longitude]});L.polyline(line,{color:"#286fe5",weight:5}).addTo(layer);points=points.concat(line);}if(points.length>1)map.fitBounds(points,{padding:[30,30],maxZoom:16});else if(points.length)map.setView(points[0],16);map.invalidateSize();};window.ReactNativeWebView.postMessage(JSON.stringify({type:"ready"}));</script></body></html>',[tiles,attribution]);
+ useEffect(()=>{if(ready)web.current?.injectJavaScript('window.updateSite('+payload.replace(/</g,'\u003c')+');true;');},[ready,payload]);
+ if(!destination&&!current)return null;
+ return <View style={{height,borderRadius:20,overflow:"hidden",backgroundColor:"#EAF1F5"}}><WebView ref={web} accessibilityLabel={title} source={{html}} originWhitelist={["*"]} javaScriptEnabled domStorageEnabled scrollEnabled={false} setSupportMultipleWindows={false} applicationNameForUserAgent="ValorElevatorsMaps/1.0" style={{flex:1,backgroundColor:"#EAF1F5"}} onError={()=>setError(true)} onShouldStartLoadWithRequest={request=>{if(request.url.startsWith("https://www.openstreetmap.org/")){void Linking.openURL(request.url);return false;}return request.url==="about:blank"||request.url.startsWith("data:");}} onMessage={event=>{try{const data=JSON.parse(event.nativeEvent.data);if(data.type==="ready")setReady(true);if(data.type==="tileError")setError(true);if(data.type==="tileReady")setError(false);if(data.type==="select"){const point=mapPoint(data.latitude,data.longitude);if(point)onSelect?.(point);}}catch{}}} />{error&&<Text style={{fontSize:12,color:"#53697C",backgroundColor:"#FFF6E9",padding:8}}>Map unavailable. You can still open directions.</Text>}</View>;
 }

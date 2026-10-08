@@ -2884,6 +2884,8 @@ function ChecklistPanel({
     responses: { itemId: number; checked?: boolean; valueText?: string }[],
   ) => Promise<void>;
 }) {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [draft, setDraft] = useState<
     Record<number, { checked?: boolean; valueText?: string }>
   >({});
@@ -2955,8 +2957,9 @@ function ChecklistPanel({
           </View>
         </View>
       ))}
-      <Pressable style={styles.primaryButton} onPress={() => onSave(payload)}>
-        <Text style={styles.primaryText}>Save checklist</Text>
+      {saveError && <Text accessibilityRole="alert" style={styles.errorText}>{saveError}</Text>}
+      <Pressable accessibilityRole="button" disabled={saving} style={styles.primaryButton} onPress={async () => { if (saving) return; setSaving(true); setSaveError(null); try { await onSave(payload); } catch (error) { setSaveError(err(error)); } finally { setSaving(false); } }}>
+        <Text style={styles.primaryText}>{saving ? "Saving checklist..." : "Save checklist"}</Text>
       </Pressable>
     </View>
   );

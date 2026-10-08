@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Valor Elevators Technician",
+    "name": "Valor Technician",
     "slug": "valor-technician",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -27,7 +27,11 @@
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION"
-      ]
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/valor-launcher-foreground.png",
+        "backgroundColor": "#F4F8FC"
+      }
     },
     "plugins": [
       [
@@ -47,6 +51,12 @@
       "image": "./assets/valor-company-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#F8FBFF"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6de23c69-aec7-437b-9887-ad3f4581834b"
+      }
+    },
+    "icon": "./assets/valor-launcher.png"
   }
 }

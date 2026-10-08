@@ -1,2 +1,2 @@
 const { expo } = require("./app.json");
-module.exports = () => ({ ...expo, plugins: [...(expo.plugins || []), ["react-native-maps", { androidGoogleMapsApiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY || "" }]] });
+module.exports = () => ({ ...expo, plugins: [...(expo.plugins || []), ["expo-build-properties", { android: { usesCleartextTraffic: process.env.EXPO_PUBLIC_API_BASE_URL?.startsWith("http://") === true } }]] });

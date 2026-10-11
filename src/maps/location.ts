@@ -14,5 +14,5 @@ export function directionsUrl(point: MapPoint | null, address: string, origin?: 
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving${origin ? `&origin=${origin.latitude},${origin.longitude}` : ""}&dir_action=navigate`;
 }
 export function showJobMap(status: string) {
-  return status === "ON_THE_WAY" || status === "REACHED_SITE";
+  return status === "ON_THE_WAY";
 }

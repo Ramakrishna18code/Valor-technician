@@ -56,9 +56,8 @@ export function ServiceHero({ status, jobId, building, service, arrivalVerified 
   const statusText = status.toLowerCase().replace(/_/g, " ");
   return <LinearGradient colors={["#F0F8FF", "#EDF8F5", "#FFFFFF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.hero}>
     <View pointerEvents="none" style={s.orbitOne} /><View pointerEvents="none" style={s.orbitTwo} />
-    <View style={s.heroTop}><View style={s.brand}><Ionicons name="shield-checkmark-outline" color="#367B94" size={16} /><Text style={s.eyebrow}>SERVICE VISIT</Text></View><View style={s.status}><Animated.View style={[s.statusDot, { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 0.45] }) }]} /><Text style={s.statusText}>{statusText}</Text></View></View>
     <View style={s.heroMain}>
-      <View style={s.heroCopy}><Text style={s.title}>{testing ? "Final checks" : service}</Text><Text style={s.description}>{testing ? "Complete testing before handover." : status === "ASSIGNED" ? "Review the site details and accept this job." : status === "ACCEPTED" ? "Job accepted. Start travel when you are ready." : status === "ON_THE_WAY" ? "Travel to the site, then confirm your arrival." : status === "REACHED_SITE" ? (arrivalVerified ? "Arrival confirmed. You can begin diagnosis." : "Confirm your arrival, then begin diagnosis.") : status === "DIAGNOSIS" ? "Inspect the lift and record your findings." : status === "WAITING_FOR_PARTS" ? "Resume work when the required parts arrive." : "Carry out the repair before final testing."}</Text></View>
+      <View style={s.heroCopy}><Text style={s.title}>{testing ? "Final checks" : service}</Text><Text style={s.description}>{testing ? "Complete testing before handover." : status === "REACHED_SITE" && arrivalVerified ? "Arrival confirmed." : ""}</Text></View>
       <View style={s.emblem}><Ionicons name={testing ? "shield-checkmark-outline" : "construct-outline"} size={24} color="#2870D5" /></View>
     </View>
     <View style={s.site}><Text style={s.siteLabel}>{service}</Text><Text style={s.siteTitle}>{building}</Text><Text selectable style={s.jobId}>Job ID · {jobId}</Text></View>

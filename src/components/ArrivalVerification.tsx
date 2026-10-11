@@ -1,14 +1,16 @@
 import { typographyStyles as appTypography } from "../theme/typography";
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { ArrivalOtpState } from "../types/technician";
 import { ServiceReveal } from "./ServiceExperience";
 
-export default function ArrivalVerification({ state, onRequest, onVerify }: {
+export default function ArrivalVerification({ state, onRequest, onVerify, visible = true, onClose }: {
   state: ArrivalOtpState | null;
   onRequest: () => Promise<void>;
   onVerify: (id: number, code: string) => Promise<void>;
+  visible?: boolean;
+  onClose?: () => void;
 }) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState<"verify" | "resend" | null>(null);
@@ -36,7 +38,7 @@ export default function ArrivalVerification({ state, onRequest, onVerify }: {
       setError(action === "resend" ? "Could not resend the code. Please try again." : "Verification failed. Check the code with the customer and try again.");
     } finally { lock.current = false; setBusy(null); }
   };
-  return <ServiceReveal>
+  return <Modal visible={visible} animationType="slide" transparent onRequestClose={() => onClose?.()}><View style={s.modal}><View style={s.sheet}><Pressable accessibilityRole="button" accessibilityLabel="Cancel arrival verification" onPress={onClose} style={s.close}><Ionicons name="close" size={24} color="#082A55" /></Pressable><ServiceReveal>
     <View style={s.card}>
       <View style={s.heading}><View style={s.smallIcon}><Ionicons name="shield-checkmark-outline" size={25} color="#246DE3" /></View><View style={s.flex}><Text style={s.eyebrow}>BEFORE YOU BEGIN</Text><Text style={s.cardTitle}>Confirm your arrival</Text></View></View>
       <Text style={s.body}>{verified ? "Arrival verified. You can continue the job." : "Ask the customer for the six-digit lift service code before starting work."}</Text>
@@ -46,7 +48,7 @@ export default function ArrivalVerification({ state, onRequest, onVerify }: {
             <View style={s.form}>
               <Text accessibilityLiveRegion="polite" style={s.body}>{available ? "The customer's persistent lift code is ready." : "A lift service code is not configured for this request."}</Text>
               <Text style={s.fieldLabel}>Customer lift code</Text>
-              <TextInput accessibilityLabel="Customer lift service code" style={s.input} value={code} onChangeText={text => setCode(text.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" maxLength={6} editable={!busy && available} placeholder="6-digit code" placeholderTextColor="#66758A" />
+              <TextInput autoFocus accessibilityLabel="Customer lift service code" style={s.input} value={code} onChangeText={text => setCode(text.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" maxLength={6} editable={!busy && available} placeholder="6-digit code" placeholderTextColor="#66758A" secureTextEntry />
               {!!error && <Text accessibilityLiveRegion="polite" style={s.error}>{error}</Text>}
               {!!notice && <Text accessibilityLiveRegion="polite" style={s.success}>{notice}</Text>}
               <Pressable accessibilityRole="button" disabled={!!busy || code.length !== 6 || !available} onPress={() => void act("verify")} style={[s.primary, (!!busy || code.length !== 6 || !available) && s.disabled]}>{busy === "verify" ? <ActivityIndicator color="#FFFFFF" /> : <><Text style={s.primaryText}>Verify service code</Text><Ionicons name="arrow-forward" size={20} color="#FFFFFF" /></>}</Pressable>
@@ -54,7 +56,7 @@ export default function ArrivalVerification({ state, onRequest, onVerify }: {
             <View style={s.hint}><Ionicons name="lock-closed-outline" size={15} color="#66758A" /><Text style={s.hintText}>The code is shared with the customer only.</Text></View>
       </>}
     </View>
-  </ServiceReveal>;
+  </ServiceReveal></View></View></Modal>;
 }
 
 const s = StyleSheet.create({
@@ -73,4 +75,6 @@ const s = StyleSheet.create({
   resend: { minHeight: 44, justifyContent: "center", alignItems: "center" }, resendText: { ...appTypography.button, color: "#246DE3" },
   disabled: { opacity: 0.45 }, error: { ...appTypography.body, color: "#D64545" }, success: { ...appTypography.body, color: "#168A4A" },
   hint: { flexDirection: "row", alignItems: "center", gap: 6 }, hintText: { ...appTypography.secondary, flexShrink: 1, color: "#66758A" },
+  modal: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(8,42,85,0.28)" },
+  sheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, paddingBottom: 28 }, close: { alignSelf: "flex-end", minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
 });

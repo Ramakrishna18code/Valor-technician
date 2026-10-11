@@ -14,6 +14,7 @@ import Dashboard from "./screens/DashboardScreen";
 import WelcomeScreen from "./screens/WelcomeScreen";
 import { ServiceHero, ServiceReveal, ServiceSection } from "./components/ServiceExperience";
 import ArrivalVerification from "./components/ArrivalVerification";
+import StageActionBar from "./components/StageActionBar";
 import PartsScreen from "./screens/PartsScreen";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, styles } from "./theme/screenStyles";
@@ -272,13 +273,13 @@ const jobInfo = (request: RequestView) => {
       "address",
       "siteAddress",
       "city",
-    ]) || "Location pending";
+    ]) || "";
   const lift =
     fieldText(source, ["liftName", "liftNumber", "liftLabel"]) ||
-    (request.liftId ? `Lift ${request.liftId}` : "Lift details pending");
+    (request.liftId ? `Lift ${request.liftId}` : "");
   const persons =
     fieldText(source, ["persons", "passengerCapacity", "capacity"]) ||
-    "Capacity not provided";
+    "";
   const customer =
     fieldText(source, ["customerName", "ownerName", "contactName"]) ||
     (request.customerProfileId
@@ -787,6 +788,7 @@ export default function App() {
             }}
           />
         )}
+        {screen === "jobDetail" && selectedJob ? <JobStageActions detail={selectedJob} checklist={checklist} completionOtp={completionOtp} arrivalOtp={arrivalOtp} onTransition={(status) => { setPendingStatus(status); setModal("transition"); }} onReport={() => setModal("report")} onBackHome={() => setScreen("dashboard")} onArrivalRequest={async () => { setArrivalOtp(await technicianApi.requestArrivalOtp(selectedJob.request.id)); }} onArrivalVerify={async (id, code) => { setArrivalOtp(await technicianApi.verifyArrivalOtp(selectedJob.request.id, id, code)); await refreshJob(); }} onCompletionRequest={async () => { setCompletionOtp(await technicianApi.requestCompletionOtp(selectedJob.request.id)); }} onCompletionVerify={async (id, code) => { setCompletionOtp(await technicianApi.verifyCompletionOtp(selectedJob.request.id, id, code)); await refreshJob(); }} /> : null}
         {screen === "visits" && (
           <VisitsScreen onVisit={openVisit} />
         )}
@@ -2077,7 +2079,7 @@ function Header({ screen, onBack }: { screen: Screen; onBack: () => void }) {
           <AppIcon name="chevron-back" size={24} color={colors.primary} />
         ) : null}
       </Pressable>
-      <Text numberOfLines={1} style={{ ...applicationTypography.cardTitle, color: colors.primary }}>{screen === "jobDetail" ? "Service visit" : screen === "visitDetail" ? "Visit details" : screen.startsWith("profile") ? "Account" : label(screen)}</Text>
+      <Text numberOfLines={1} style={{ ...applicationTypography.cardTitle, color: colors.primary }}>{screen === "jobDetail" ? "" : screen === "visitDetail" ? "Visit details" : screen.startsWith("profile") ? "Account" : label(screen)}</Text>
       <View style={styles.headerButton} />
     </View>
   );
@@ -2205,6 +2207,27 @@ function Jobs({ items, filter, loading, onFilter, onJob, onStartJob, onRefresh }
     ListEmptyComponent={loading ? <ActivityIndicator color={colors.info} /> : <Empty text={hasFilters ? "No jobs match these filters. Clear filters to see all assignments." : "No jobs assigned yet. Refresh to check for new assignments."} />}
   />;
 }
+function JobStageActions({ detail, checklist, completionOtp, arrivalOtp, onTransition, onReport, onBackHome, onArrivalRequest, onArrivalVerify, onCompletionRequest, onCompletionVerify }: { detail: JobDetail; checklist: JobChecklistView | null; completionOtp: CompletionOtpState | null; arrivalOtp: ArrivalOtpState | null; onTransition: (status: RequestStatus) => void; onReport: () => void; onBackHome: () => void; onArrivalRequest: () => Promise<void>; onArrivalVerify: (id: number, code: string) => Promise<void>; onCompletionRequest: () => Promise<void>; onCompletionVerify: (id: number, code: string) => Promise<void> }) {
+  const request = detail.request;
+  const needsAcceptance = detail.activeAssignment?.status === "ASSIGNED";
+  const [arrivalOpen, setArrivalOpen] = useState(false), [completionOpen, setCompletionOpen] = useState(false);
+  if (request.status === "CANCELLED") return null;
+  const checklistDone = !checklist || checklist.status === "COMPLETED";
+  const reportDone = Boolean(detail.report?.diagnosis?.trim() && detail.report?.workPerformed?.trim() && detail.report?.testingResult?.trim() && detail.report.assignmentId === detail.activeAssignment?.id);
+  const otpDone = completionOtp?.status === "VERIFIED";
+  const arrivalDone = arrivalOtp?.status === "VERIFIED";
+  const status = needsAcceptance || request.status === "ASSIGNED" ? "ACCEPTED" : request.status === "ACCEPTED" ? "ON_THE_WAY" : request.status === "ON_THE_WAY" ? "REACHED_SITE" : request.status === "REACHED_SITE" ? "DIAGNOSIS" : request.status === "DIAGNOSIS" || request.status === "WAITING_FOR_PARTS" ? "REPAIR_IN_PROGRESS" : request.status === "REPAIR_IN_PROGRESS" ? "TESTING" : "COMPLETED" as RequestStatus;
+  const label = request.status === "COMPLETED" ? "Back to Home" : needsAcceptance || request.status === "ASSIGNED" ? "Accept assignment" : request.status === "ACCEPTED" ? "Start travel" : request.status === "ON_THE_WAY" ? "Reached site" : request.status === "REACHED_SITE" ? (arrivalDone ? "Start diagnosis" : "Verify arrival OTP") : request.status === "DIAGNOSIS" ? "Start repair" : request.status === "WAITING_FOR_PARTS" ? "Resume repair" : request.status === "REPAIR_IN_PROGRESS" ? "Proceed to testing" : otpDone ? "Complete job" : "Verify completion OTP";
+  const disabled = request.status === "TESTING" && otpDone && (!checklistDone || !reportDone);
+  const info = jobInfo(request);
+  if (request.status === "COMPLETED") return <StageActionBar primaryLabel="Back to Home" primaryIcon="home-outline" secondaryLabel="Review job" secondaryIcon="document-text-outline" onSecondary={() => undefined} onPrimary={onBackHome} />;
+  const secondaryLabel = request.status === "REPAIR_IN_PROGRESS" ? "Waiting for parts" : request.status === "TESTING" ? "Report" : "Call";
+  const secondaryIcon = request.status === "REPAIR_IN_PROGRESS" ? "cube-outline" : request.status === "TESTING" ? "document-text-outline" : "call-outline";
+  const primary = () => request.status === "REACHED_SITE" && !arrivalDone ? setArrivalOpen(true) : request.status === "TESTING" && !otpDone ? setCompletionOpen(true) : onTransition(status);
+  const secondary = () => request.status === "REPAIR_IN_PROGRESS" ? onTransition("WAITING_FOR_PARTS") : request.status === "TESTING" ? onReport() : callPhone(info.phone);
+  return <><StageActionBar primaryLabel={label} primaryIcon="arrow-forward" primaryDisabled={disabled} secondaryLabel={secondaryLabel} secondaryIcon={secondaryIcon} onSecondary={secondary} onPrimary={primary} />{arrivalOpen ? <ArrivalVerification visible state={arrivalOtp} onClose={() => setArrivalOpen(false)} onRequest={onArrivalRequest} onVerify={async (id, code) => { await onArrivalVerify(id, code); setArrivalOpen(false); }} /> : null}{completionOpen ? <CompletionOtpPanel visible state={completionOtp} onClose={() => setCompletionOpen(false)} onRequest={onCompletionRequest} onVerify={async (id, code) => { await onCompletionVerify(id, code); }} onContinue={() => setCompletionOpen(false)} /> : null}</>;
+}
+
 function JobDetailScreen({
   detail,
   onBackHome,
@@ -2254,7 +2277,8 @@ function JobDetailScreen({
 }) {
   const request = detail.request;
   const [handoverOpen, setHandoverOpen] = useState(false);
-  useEffect(() => { if (request.status === "TESTING" && completionOtp?.status === "VERIFIED") setHandoverOpen(true); }, [request.status, completionOtp?.status]);
+  const [arrivalModalOpen, setArrivalModalOpen] = useState(false);
+  const [completionModalOpen, setCompletionModalOpen] = useState(false);
   const needsAcceptance = detail.activeAssignment?.status === "ASSIGNED";
   const info = jobInfo(request);
   const checklistDone = !checklist || checklist.status === "COMPLETED";
@@ -2264,6 +2288,12 @@ function JobDetailScreen({
   const nextStatus: RequestStatus = request.status === "REACHED_SITE" ? "DIAGNOSIS" : request.status === "DIAGNOSIS" || request.status === "WAITING_FOR_PARTS" ? "REPAIR_IN_PROGRESS" : request.status === "TESTING" ? "COMPLETED" : "TESTING";
   const nextLabel = request.status === "REACHED_SITE" ? "Start diagnosis" : request.status === "DIAGNOSIS" ? "Start repair" : request.status === "WAITING_FOR_PARTS" ? "Resume repair" : request.status === "TESTING" ? "Complete job" : "Proceed to testing";
   const nextDisabled = arrivalBlocked || (request.status === "TESTING" && (!checklistDone || !otpDone || !reportDone));
+  useEffect(() => {
+    if (request.status === "TESTING" && completionOtp?.status === "VERIFIED" && reportDone && checklistDone) setHandoverOpen(true);
+    else if (request.status !== "TESTING" || completionOtp?.status !== "VERIFIED") setHandoverOpen(false);
+  }, [request.status, completionOtp?.status, reportDone, checklistDone]);
+  useEffect(() => { if (request.status !== "REACHED_SITE") setArrivalModalOpen(false); }, [request.status]);
+  useEffect(() => { if (request.status !== "TESTING") setCompletionModalOpen(false); }, [request.status]);
   const hasDocuments = attachments.length > 0;
   const openAttachment = async (attachment: AttachmentView) => {
     const url = technicianApi.attachmentUrl(request.id, attachment.id);
@@ -2289,7 +2319,7 @@ function JobDetailScreen({
 
   if (request.status === "COMPLETED") {
     return (
-      <ScrollView key={request.status} contentContainerStyle={styles.detailContent}>
+      <ScrollView key={request.status} style={styles.detailScroll} contentContainerStyle={styles.detailContent}>
         <CompletedJobView
           detail={detail}
           info={info}
@@ -2311,40 +2341,26 @@ function JobDetailScreen({
 
   if (request.status === "ON_THE_WAY" && !needsAcceptance) {
     return (
-      <ScrollView key={request.status} contentContainerStyle={styles.detailContent}>
+      <ScrollView key={request.status} style={styles.detailScroll} contentContainerStyle={styles.detailContent}>
         <ServiceHero status={request.status} jobId={request.serviceId || `SR-${request.id}`} building={info.building} service={label(request.serviceType)} />
         <JobSiteMap request={request} location={jobLocation} />
         <BuildingSummaryCard request={request} info={info} compact />
         <View style={styles.routeStatsGrid}>
           {jobLocation?.route?.available && <RouteStat label="Distance" value={jobLocation?.route?.distanceMeters != null ? `${(jobLocation.route.distanceMeters / 1000).toFixed(1)} km` : "Unavailable"} />}
           {jobLocation?.route?.available && <RouteStat label="Estimated Time" value={jobLocation?.route?.durationSeconds != null ? `${Math.max(1, Math.round(jobLocation.route.durationSeconds / 60))} min` : "Unavailable"} />}
-          <RouteStat label="Scheduled Time" value={request.preferredTimeSlot || "Time pending"} />
+          {request.preferredTimeSlot ? <RouteStat label="Scheduled Time" value={request.preferredTimeSlot} /> : null}
         </View>
-        <View style={styles.detailTwoCol}>
-          <Pressable accessibilityRole="button" style={styles.outlineButton} onPress={() => callPhone(info.phone)}>
-            <Text style={styles.outlineText}>Call Customer</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" style={styles.outlineButton} onPress={() => messagePhone(info.phone)}>
-            <Text style={styles.outlineText}>Message</Text>
-          </Pressable>
-        </View>
-        <Info title="Job Instructions" rows={[info.instructions || "No additional instructions have been provided."]} />
-        <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => onTransition("REACHED_SITE")}>
-          <Text style={styles.primaryText}>Reached site</Text>
-        </Pressable>
+        {info.instructions ? <Info title="Job Instructions" rows={[info.instructions]} /> : null}
       </ScrollView>
     );
   }
 
   if (!needsAcceptance && ["REACHED_SITE", "DIAGNOSIS", "REPAIR_IN_PROGRESS", "WAITING_FOR_PARTS", "TESTING"].includes(request.status)) {
     return (
-      <ScrollView key={request.status} contentContainerStyle={styles.detailContent}>
+      <ScrollView key={request.status} style={styles.detailScroll} contentContainerStyle={styles.detailContent}>
         <ServiceReveal key={`hero-${request.id}`}>
           <ServiceHero arrivalVerified={arrivalOtp?.status === "VERIFIED"} status={request.status} jobId={request.serviceId || `SR-${request.id}`} building={info.building} service={label(request.serviceType)} />
         </ServiceReveal>
-        {request.status === "REACHED_SITE" || request.status === "DIAGNOSIS" ? (
-          <ArrivalOtpPanel key={`arrival-${request.id}`} state={arrivalOtp} onRequest={onRequestArrivalOtp} onVerify={onVerifyArrivalOtp} />
-        ) : null}
         <ServiceReveal delay={100}>
         <View style={styles.progressNotice}>
           <AppIcon name="construct-outline" size={22} color={colors.teal} />
@@ -2368,7 +2384,7 @@ function JobDetailScreen({
           <Text style={styles.serviceBodyText}>{info.instructions || "No additional instructions have been provided for this job."}</Text>
         </View>
         </ServiceReveal>
-        <ChecklistPanel checklist={checklist} onSave={onChecklistSave} />
+        {request.status === "TESTING" && checklist ? <ChecklistPanel checklist={checklist} onSave={onChecklistSave} /> : null}
 
         {request.status === "TESTING" && <View style={styles.serviceInstructionCard}>
           <Text style={styles.serviceCardHeading}>Before handover</Text>
@@ -2376,49 +2392,23 @@ function JobDetailScreen({
           <Pressable accessibilityRole="button" onPress={onReport} style={styles.serviceSecondaryAction}><Text style={styles.outlineText}>{reportDone ? "Edit saved service report" : "2. Add service report & notes"}</Text></Pressable>
           <Text style={styles.serviceBodyText}>{otpDone ? "✓ Customer completion verified" : "3. Verify the customer's completion OTP"}</Text>
         </View>}
-        {request.status === "TESTING" ? (
-          <CompletionOtpPanel state={completionOtp} onRequest={onRequestOtp} onVerify={onVerifyOtp} onContinue={() => setHandoverOpen(true)} />
-        ) : null}
-        {request.status === "TESTING" && !checklistDone ? (
+        {request.status === "TESTING" && checklist && !checklistDone ? (
           <Text style={styles.muted}>Complete all required checklist items before completing this job.</Text>
         ) : null}
         {request.status === "TESTING" && !otpDone ? (
           <Text style={styles.muted}>Verify the customer completion OTP before completing this job.</Text>
         ) : null}
-        <Pressable
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.servicePrimaryAction, pressed && styles.serviceActionPressed, nextDisabled && styles.disabled]}
-          disabled={nextDisabled}
-          onPress={() => onTransition(nextStatus)}
-        >
-          <Text style={styles.primaryText}>{nextLabel}</Text>
-          <AppIcon name="arrow-forward" size={20} color={colors.surface} />
-        </Pressable>
-        {request.status === "REPAIR_IN_PROGRESS" && <Pressable accessibilityRole="button" style={styles.serviceSecondaryAction} onPress={() => onTransition("WAITING_FOR_PARTS")}>
-          <Text style={styles.outlineText}>Waiting for parts</Text>
-        </Pressable>}
-        <Pressable accessibilityRole="button" style={styles.serviceSecondaryAction} onPress={onReport}>
-          <Text style={styles.outlineText}>Service report & notes</Text>
-        </Pressable>
       </ScrollView>
     );
   }
 
   return (
-    <ScrollView key={request.status} contentContainerStyle={styles.detailContent}>
-      {["ASSIGNED", "ACCEPTED"].includes(request.status) ? <ServiceHero status={request.status} jobId={request.serviceId || `SR-${request.id}`} building={info.building} service={label(request.serviceType)} /> : <StatusHeader title={request.status === "CANCELLED" ? "Job cancelled" : "Job details"} subtitle="Review this service request." request={request} callPhone={info.phone} />}
-      <BuildingSummaryCard request={request} info={info} />
-      <DetailInfoGrid request={request} info={info} />
+    <ScrollView key={request.status} style={styles.detailScroll} contentContainerStyle={styles.detailContent}>
+      {request.status === "ASSIGNED" ? <><View style={styles.assignedStatusRow}><Badge text="Assigned" tone="info" /></View><BuildingSummaryCard request={request} info={info} compact /></> : ["ACCEPTED"].includes(request.status) ? <ServiceHero status={request.status} jobId={request.serviceId || `SR-${request.id}`} building={info.building} service={label(request.serviceType)} /> : <StatusHeader title={request.status === "CANCELLED" ? "Job cancelled" : "Job details"} subtitle="Review this service request." request={request} callPhone={info.phone} />}
+      {request.status !== "ASSIGNED" ? <BuildingSummaryCard request={request} info={info} /> : null}
+      {request.status !== "ASSIGNED" ? <DetailInfoGrid request={request} info={info} /> : null}
       {request.description ? <Info title="Issue Reported" rows={[request.description]} /> : null}
       {info.instructions ? <Info title="Special Instructions" rows={[info.instructions]} /> : null}
-      {needsAcceptance && <View style={styles.serviceInstructionCard}><Text style={styles.serviceCardHeading}>Accept your assignment</Text><Text style={styles.serviceBodyText}>Confirm this assignment before updating travel or work. The existing service progress will be kept.</Text></View>}
-      {(needsAcceptance || ["ASSIGNED", "ACCEPTED"].includes(request.status)) && <Pressable
-        accessibilityRole="button"
-        style={styles.primaryButton}
-        onPress={() => onTransition(needsAcceptance || request.status === "ASSIGNED" ? "ACCEPTED" : "ON_THE_WAY")}
-      >
-        <Text style={styles.primaryText}>{needsAcceptance || request.status === "ASSIGNED" ? "Accept job" : "Start travel"}</Text>
-      </Pressable>}
       <View style={styles.detailTwoCol}>
         {hasDocuments ? (
           <Pressable accessibilityRole="button" style={styles.outlineButton} onPress={() => openAttachment(attachments[0])}>
@@ -2600,9 +2590,9 @@ function BuildingSummaryCard({
           <Text style={styles.buildingTitle}>{info.building}</Text>
           <Badge text={label(request.serviceType)} tone={request.priority === "EMERGENCY" ? "danger" : "info"} />
         </View>
-        <Text style={styles.assignedMeta}>{info.location}</Text>
-        <Text style={styles.assignedMeta}>{info.lift}</Text>
-        <Text style={styles.assignedMeta}>{info.persons}</Text>
+        {info.location ? <Text style={styles.assignedMeta}>{info.location}</Text> : null}
+        {info.lift ? <Text style={styles.assignedMeta}>{info.lift}</Text> : null}
+        {info.persons ? <Text style={styles.assignedMeta}>{info.persons}</Text> : null}
       </View>
     </View>
   );
@@ -2617,12 +2607,7 @@ function DetailInfoGrid({
 }) {
   return (
     <>
-      <DetailRow icon="construct-outline" label="Service Type" value={label(request.serviceType)} />
-      <View style={styles.detailTwoCol}>
-        <DetailRow icon="calendar-outline" label="Schedule Date" value={request.preferredVisitDate || "Date pending"} />
-        <DetailRow icon="time-outline" label="Time" value={request.preferredTimeSlot || "Time pending"} />
-      </View>
-      <DetailRow icon="person-outline" label="Customer Contact" value={info.customer} />
+      {info.customer ? <DetailRow icon="person-outline" label="Customer Contact" value={info.customer} /> : null}
     </>
   );
 }
@@ -2829,11 +2814,6 @@ function CompletedJobView({
           {!!item.notes && <Text style={styles.completionBody}>{item.notes}</Text>}
         </View>) : <Text style={styles.serviceBodyText}>No service history available.</Text>)}
       </View>
-      <View style={styles.detailTwoCol}>
-        <Pressable accessibilityRole="button" style={({ pressed }) => [styles.startButton, pressed && styles.serviceActionPressed]} onPress={onBackHome}>
-          <Text style={styles.primaryText}>Back to Home</Text>
-        </Pressable>
-      </View>
     </>
   );
 }
@@ -2983,17 +2963,23 @@ function CompletionOtpPanel({
   onRequest,
   onVerify,
   onContinue,
+  visible = true,
+  onClose,
 }: {
   state: CompletionOtpState | null;
   onRequest: () => Promise<void>;
   onVerify: (otpId: number, otp: string) => Promise<void>;
   onContinue: () => void;
+  visible?: boolean;
+  onClose?: () => void;
 }) {
   const [otp, setOtp] = useState("");
   const [verifyError, setVerifyError] = useState("");
   const [failedAttempts, setFailedAttempts] = useState(0);
-  if (state?.status === "VERIFIED") return <View style={styles.card}><View style={styles.serviceSectionHeading}><AppIcon name="checkmark-circle" size={26} color={colors.teal} /><Text style={styles.serviceCardHeading}>Customer completion confirmed</Text></View><Text style={styles.serviceBodyText}>Verification is saved. Continue to handover to finish any remaining details.</Text><Pressable accessibilityRole="button" style={styles.servicePrimaryAction} onPress={onContinue}><Text style={styles.primaryText}>Continue to handover</Text><AppIcon name="arrow-forward" size={20} color="#FFFFFF" /></Pressable></View>;
+  if (state?.status === "VERIFIED") return <Modal visible={visible} transparent animationType="slide" onRequestClose={() => onClose?.()}><View style={styles.otpModal}><View style={styles.otpSheet}><Pressable accessibilityRole="button" onPress={onClose} style={styles.otpClose}><AppIcon name="close" size={24} color={colors.text} /></Pressable><View style={styles.serviceSectionHeading}><AppIcon name="checkmark-circle" size={26} color={colors.teal} /><Text style={styles.serviceCardHeading}>Completion verified</Text></View><Pressable accessibilityRole="button" style={styles.servicePrimaryAction} onPress={onContinue}><Text style={styles.primaryText}>Continue</Text><AppIcon name="arrow-forward" size={20} color="#FFFFFF" /></Pressable></View></View></Modal>;
   return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => onClose?.()}><View style={styles.otpModal}><View style={styles.otpSheet}><Pressable accessibilityRole="button" onPress={onClose} style={styles.otpClose}><AppIcon name="close" size={24} color={colors.text} /></Pressable>
+    <View>
     <View style={styles.card}>
       <Text style={styles.sectionHeading}>Customer completion OTP</Text>
       <Text style={styles.muted}>
@@ -3017,7 +3003,7 @@ function CompletionOtpPanel({
           </Pressable>
         </>
       ) : null}
-    </View>
+    </View></View></View></View></Modal>
   );
 }
 

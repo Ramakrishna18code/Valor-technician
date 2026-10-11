@@ -59,11 +59,11 @@ export default function WelcomeScreen({ onGetStarted, onSignIn }: {
 const serif = Platform.select({ ios: "Georgia", android: "serif", default: "'Times New Roman', serif" });
 const makeStyles = (r: number) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#EDF3FB" },
-  frame: { flex: 1, width: "100%", maxWidth: 508, alignSelf: "center", overflow: "hidden" },
+  frame: { flex: 1, width: "100%", alignSelf: "center", overflow: "hidden" },
   topCircle: { position: "absolute", width: 416 * r, height: 416 * r, borderRadius: 208 * r, top: -208 * r, right: -214 * r, backgroundColor: "#DCE9FF", opacity: 0.65 },
   bottomCircle: { position: "absolute", width: 360 * r, height: 360 * r, borderRadius: 180 * r, bottom: -160 * r, left: -202 * r, backgroundColor: "#FBE7BF", opacity: 0.45 },
-  content: { flexGrow: 1, paddingHorizontal: 32 * r, paddingTop: 16 * r, paddingBottom: 10 * r },
-  hero: { alignItems: "center", marginBottom: 42 * r },
+  content: { flexGrow: 1, paddingHorizontal: 32 * r, paddingTop: Math.max(32, 16 * r), paddingBottom: 20 * r },
+  hero: { alignItems: "center", marginBottom: 28 * r },
   portrait: { width: 208 * r, height: 208 * r, borderRadius: 104 * r, backgroundColor: "#EAF2FF", overflow: "hidden", marginBottom: 34 * r },
   illustration: { width: 208 * r, height: 208 * r },
   title: { ...appTypography.screenTitle, color: "#102033", textAlign: "center" },

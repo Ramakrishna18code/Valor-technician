@@ -138,12 +138,15 @@ const JOB_FILTERS: Array<{
   label: string;
   status?: RequestStatus;
   statuses?: RequestStatus[];
+  emergency?: boolean;
 }> = [
   { label: "All" },
   { label: "Assigned", status: "ASSIGNED" },
   { label: "Accepted", status: "ACCEPTED" },
   { label: "In Progress", statuses: IN_PROGRESS },
   { label: "Completed", status: "COMPLETED" },
+  { label: "Emergency", emergency: true },
+  { label: "Cancelled", status: "CANCELLED" },
 ];
 const DATE_FILTERS = [
   { label: "Today", key: "today" },
@@ -675,6 +678,7 @@ export default function App() {
     jobs?.items.filter(
       (item) =>
         (!JOB_FILTERS[jobFilter].status || JOB_FILTERS[jobFilter].status === item.status) &&
+        (!JOB_FILTERS[jobFilter].emergency || item.priority === "EMERGENCY") &&
         (!JOB_FILTERS[jobFilter].statuses || JOB_FILTERS[jobFilter].statuses?.includes(item.status)),
     ) ?? [];
 
@@ -738,6 +742,11 @@ export default function App() {
             items={activeJobs}
             filter={jobFilter}
             loading={loading}
+            onRefresh={async () => {
+              const nextJobs = await allTechnicianJobs();
+              setJobs(nextJobs);
+              setOverviewJobs(nextJobs.items);
+            }}
             onFilter={(index) =>
               loadJobs(index).catch((error) => setMessage(err(error)))
             }
@@ -2186,24 +2195,52 @@ function ChevronIcon() {
 }
 
 
-function Jobs({ items, filter, loading, onFilter, onJob, onStartJob }: {
+function Jobs({ items, filter, loading, onFilter, onJob, onStartJob, onRefresh }: {
   items: RequestView[]; filter: number; loading: boolean;
+  onRefresh: () => Promise<void>;
   onFilter: (index: number) => void; onJob: (job: RequestView) => void; onStartJob: (job: RequestView) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const refreshLock = useRef(false);
+  const refresh = async () => {
+    if (refreshLock.current || loading) return;
+    refreshLock.current = true;
+    setRefreshing(true);
+    setRefreshError(null);
+    try { await onRefresh(); }
+    catch (error) { setRefreshError(err(error)); }
+    finally { refreshLock.current = false; setRefreshing(false); }
+  };
   const [dateFilter, setDateFilter] = useState(DATE_FILTERS.findIndex(item => item.key === "all"));
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [month, setMonth] = useState(String(new Date().getMonth() + 1));
   const visibleJobs = filterJobsByDate(items, DATE_FILTERS[dateFilter].key, year, month).filter(job => {
     const query = search.trim().toLowerCase();
     const info = jobInfo(job);
-    return !query || [requestTitle(job), requestSummary(job), info.building, info.location, info.lift, label(job.status)].some(value => value.toLowerCase().includes(query));
+    return !query || [job.serviceId || `SR-${job.id}`, String(job.id), requestTitle(job), requestSummary(job), info.building, info.location, info.lift, label(job.status)].some(value => value.toLowerCase().includes(query));
   });
+  const hasFilters = Boolean(search.trim() || filter !== 0 || DATE_FILTERS[dateFilter].key !== "all");
+  const clearFilters = () => {
+    setSearch("");
+    onFilter(0);
+    setDateFilter(DATE_FILTERS.findIndex(item => item.key === "all"));
+    setYear(String(new Date().getFullYear()));
+    setMonth(String(new Date().getMonth() + 1));
+  };
   return <FlatList style={{flex: 1}} contentContainerStyle={styles.jobsContent}
+    refreshing={refreshing} onRefresh={refresh}
     data={loading ? [] : visibleJobs} keyExtractor={item => String(item.id)} keyboardShouldPersistTaps="handled"
     ListHeaderComponent={<View style={styles.jobHeader}>
       <View style={styles.jobsIntro}>
-        <Text style={styles.jobsTitle}>Jobs</Text>
+        <View style={styles.jobsResultsRow}>
+          <Text style={styles.jobsTitle}>Jobs</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Refresh jobs" accessibilityState={{disabled: refreshing || loading}} disabled={refreshing || loading} onPress={refresh} style={styles.jobsUtilityButton}>
+            {refreshing ? <ActivityIndicator size="small" color={colors.info} /> : <AppIcon name="refresh-outline" size={20} color={colors.info} />}
+            <Text style={styles.jobsFilterText}>{refreshing ? "Refreshing" : "Refresh"}</Text>
+          </Pressable>
+        </View>
         <Text style={styles.jobsDescription}>Find a job, review the site details and update your progress.</Text>
       </View>
       <View style={styles.jobsSearchField}><AppIcon name="search-outline" size={20} color={colors.muted} /><TextInput accessibilityLabel="Search assigned jobs" style={styles.jobsSearchText} value={search} onChangeText={setSearch} placeholder="Search job, building or lift" placeholderTextColor={colors.muted} /></View>
@@ -2218,16 +2255,18 @@ function Jobs({ items, filter, loading, onFilter, onJob, onStartJob }: {
       </View>
       {["thisMonth", "nextMonth", "pastMonth"].includes(DATE_FILTERS[dateFilter].key) && <View style={styles.subFilterRow}>
         <View style={{flex:1}}><Text style={styles.inputLabel}>Year</Text><TextInput style={styles.input} accessibilityLabel="Year" value={year} onChangeText={setYear} keyboardType="number-pad" /></View>
-        <View style={{flex:1}}><Text style={styles.inputLabel}>Month (1?12)</Text><TextInput style={styles.input} accessibilityLabel="Month" value={month} onChangeText={setMonth} keyboardType="number-pad" /></View>
+        <View style={{flex:1}}><Text style={styles.inputLabel}>Month (1–12)</Text><TextInput style={styles.input} accessibilityLabel="Month" value={month} onChangeText={setMonth} keyboardType="number-pad" /></View>
       </View>}
       </View>
+      {refreshError && <View accessibilityRole="alert" style={styles.jobsRefreshError}><Text style={styles.danger}>{refreshError}</Text><Text style={styles.muted}>Your previous results are still shown. Tap Refresh to try again.</Text></View>}
+      {hasFilters && <Pressable accessibilityRole="button" accessibilityLabel="Clear filters" onPress={clearFilters} style={styles.jobsUtilityButton}><AppIcon name="close-circle-outline" size={18} color={colors.info} /><Text style={styles.jobsFilterText}>Clear filters</Text></Pressable>}
       <View style={styles.jobsResultsRow}>
         <Text style={styles.jobsResultsTitle}>Your jobs</Text>
         <Text style={styles.jobsResultCount}>{loading ? "Loading jobs…" : `${visibleJobs.length} ${visibleJobs.length === 1 ? "job" : "jobs"} found`}</Text>
       </View>
     </View>}
     renderItem={({item}) => <AssignedJobCard job={item} onPress={() => onJob(item)} onStart={() => onStartJob(item)} />}
-    ListEmptyComponent={loading ? <ActivityIndicator color={colors.info} /> : <Empty text="No jobs match these filters. Try All statuses and All dates." />}
+    ListEmptyComponent={loading ? <ActivityIndicator color={colors.info} /> : <Empty text={hasFilters ? "No jobs match these filters. Clear filters to see all assignments." : "No jobs assigned yet. Refresh to check for new assignments."} />}
   />;
 }
 function JobDetailScreen({
@@ -2320,6 +2359,8 @@ function JobDetailScreen({
         <CompletedJobView
           detail={detail}
           info={info}
+          checklist={checklist}
+          completionOtp={completionOtp}
           servicePayment={servicePayment}
           onBackHome={onBackHome}
         />
@@ -2764,15 +2805,29 @@ function LocationNameCard({
 function CompletedJobView({
   detail,
   info,
+  checklist,
+  completionOtp,
   servicePayment,
   onBackHome,
 }: {
   detail: JobDetail;
   info: ReturnType<typeof jobInfo>;
+  checklist: JobChecklistView | null;
+  completionOtp: CompletionOtpState | null;
   servicePayment: TechnicianServicePayment | null;
   onBackHome: () => void;
 }) {
-  const [showReport, setShowReport] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const formatCompletedDate = (value?: string | null) => {
+    if (!value || Number.isNaN(new Date(value).getTime())) return "Not recorded";
+    return new Date(value).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+  const completionDate = detail.request.completedAt || [...detail.history].reverse().find(item => item.toStatus === "COMPLETED")?.changedAt;
+  const checks = [
+    { title: "Service report", value: detail.report ? "Saved" : "Not available", done: Boolean(detail.report) },
+    { title: "Checklist", value: checklist ? `${checklist.requiredCompleted}/${checklist.requiredTotal} required items · ${label(checklist.status)}` : "Not available", done: checklist?.status === "COMPLETED" },
+    { title: "Customer verification", value: completionOtp ? label(completionOtp.status) : "Not recorded", done: completionOtp?.status === "VERIFIED" },
+  ];
   return (
     <>
       <View style={styles.completedHero}>
@@ -2785,39 +2840,63 @@ function CompletedJobView({
         </Text>
       </View>
       <View style={styles.card}>
-        <View style={styles.rowBetween}>
-          <View>
-            <Text style={styles.cardTitle}>{requestSummary(detail.request)}</Text>
-            <Text style={styles.assignedMeta}>{detail.request.serviceId || `SR-${detail.request.id}`}</Text>
+        <View style={styles.completionHeading}>
+          <View style={styles.serviceFlexibleCopy}>
+            <Text style={styles.cardTitle}>{info.building}</Text>
+            <Text selectable style={styles.assignedMeta}>{detail.request.serviceId || `SR-${detail.request.id}`}</Text>
           </View>
-          <Badge text="Completed" tone="info" />
+          <View style={styles.completionBadge}><Text style={styles.completionBadgeText}>Completed</Text></View>
         </View>
-        <Info
-          title={info.building}
-          rows={[
-            info.location,
-            detail.request.completedAt ? new Date(detail.request.completedAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : detail.request.preferredVisitDate,
-            detail.report?.completionNotes || "No completion notes provided.",
-          ]}
-        />
+        <DetailRow icon="location-outline" label="Location" value={info.location} />
+        <DetailRow icon="business-outline" label="Lift" value={info.lift} />
+        <DetailRow icon="construct-outline" label="Service" value={label(detail.request.serviceType)} />
+        <DetailRow icon="person-outline" label="Customer" value={info.customer} />
+        <DetailRow icon="time-outline" label="Completed on" value={formatCompletedDate(completionDate)} />
       </View>
-      {servicePayment?.payment ? <View style={styles.serviceInstructionCard}>
-        <Text style={styles.serviceCardHeading}>Payment status</Text>
-        <Text style={styles.serviceBodyText}>{label(servicePayment.payment.status || "Not provided")}</Text>
-        {servicePayment.payment.amount != null && <Text style={styles.serviceBodyText}>{servicePayment.payment.currency || "INR"} {servicePayment.payment.amount.toFixed(2)}</Text>}
-      </View> : null}
-      {showReport && <View style={styles.serviceInstructionCard}>
-        <Text style={styles.serviceCardHeading}>Saved service report</Text>
-        <Info title="Diagnosis" rows={[detail.report?.diagnosis || "Not provided"]} />
-        <Info title="Work performed" rows={[detail.report?.workPerformed || "Not provided"]} />
-        <Info title="Testing result" rows={[detail.report?.testingResult || "Not provided"]} />
-        <Info title="Completion notes" rows={[detail.report?.completionNotes || "No additional notes"]} />
-      </View>}
-      <View style={styles.detailTwoCol}>
-        <Pressable accessibilityRole="button" style={styles.outlineButton} onPress={() => setShowReport(value => !value)}>
-          <Text style={styles.outlineText}>{showReport ? "Hide service details" : "View Service Details"}</Text>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Completion summary</Text>
+        <View style={styles.completionChecks}>
+          {checks.map(check => <View key={check.title} style={styles.completionCheckItem}>
+            <AppIcon name={check.done ? "checkmark-circle" : "information-circle-outline"} size={22} color={check.done ? "#187044" : colors.muted} />
+            <View style={styles.serviceFlexibleCopy}>
+              <Text style={styles.completionLabel}>{check.title}</Text>
+              <Text style={styles.serviceBodyText}>{check.value}</Text>
+            </View>
+          </View>)}
+        </View>
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Service report</Text>
+        {[
+          { title: "Diagnosis", value: detail.report?.diagnosis },
+          { title: "Work performed", value: detail.report?.workPerformed },
+          { title: "Testing result", value: detail.report?.testingResult },
+          { title: "Completion notes", value: detail.report?.completionNotes },
+        ].map(field => <View key={field.title} style={styles.completionReportField}>
+          <Text style={styles.completionLabel}>{field.title}</Text>
+          <Text selectable style={styles.completionBody}>{field.value?.trim() || "Not recorded"}</Text>
+        </View>)}
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Payment details</Text>
+        <DetailRow icon="card-outline" label="Payment status" value={servicePayment?.payment ? label(servicePayment.payment.status || "Not recorded") : "No payment recorded"} />
+        {servicePayment?.invoice && <DetailRow icon="document-text-outline" label="Invoice" value={servicePayment.invoice.invoiceNumber || "Invoice number not available"} />}
+        {servicePayment?.invoice?.totalAmount != null && <DetailRow icon="cash-outline" label="Invoice total" value={`${servicePayment.invoice.currency || "INR"} ${servicePayment.invoice.totalAmount.toFixed(2)}`} />}
+        {servicePayment?.payment?.amount != null && <DetailRow icon="cash-outline" label="Payment amount" value={`${servicePayment.payment.currency || "INR"} ${servicePayment.payment.amount.toFixed(2)}`} />}
+      </View>
+      <View style={styles.card}>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: showHistory }} style={({ pressed }) => [styles.completionHeading, pressed && styles.serviceActionPressed]} onPress={() => setShowHistory(value => !value)}>
+          <Text style={styles.cardTitle}>Service history</Text>
+          <AppIcon name={showHistory ? "chevron-up" : "chevron-down"} size={22} color={colors.primary} />
         </Pressable>
-        <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={onBackHome}>
+        {showHistory && (detail.history.length ? detail.history.map(item => <View key={item.id} style={styles.completionReportField}>
+          <Text style={styles.completionLabel}>{label(item.toStatus)}</Text>
+          <Text style={styles.serviceBodyText}>{formatCompletedDate(item.changedAt)}</Text>
+          {!!item.notes && <Text style={styles.completionBody}>{item.notes}</Text>}
+        </View>) : <Text style={styles.serviceBodyText}>No service history available.</Text>)}
+      </View>
+      <View style={styles.detailTwoCol}>
+        <Pressable accessibilityRole="button" style={({ pressed }) => [styles.startButton, pressed && styles.serviceActionPressed]} onPress={onBackHome}>
           <Text style={styles.primaryText}>Back to Home</Text>
         </Pressable>
       </View>
@@ -3770,8 +3849,15 @@ function AssignedJobCard({
 }) {
   const info = jobInfo(job);
   const canStart = job.status === "ASSIGNED" || job.status === "ACCEPTED";
+  const canContinue = IN_PROGRESS.includes(job.status);
+  const isPrimaryAction = canStart || canContinue;
+  const isCompleted = job.status === "COMPLETED";
   return (
     <View style={styles.assignedCardLarge}>
+      <View style={styles.jobsResultsRow}>
+        <Text style={styles.jobsFilterLabel}>{job.serviceId || `SR-${job.id}`}</Text>
+        {job.priority === "EMERGENCY" && <View style={[styles.jobsStatusBadge, styles.jobsStatusEmergency]}><Text style={styles.jobsStatusEmergencyText}>Emergency</Text></View>}
+      </View>
       <Pressable accessibilityRole="button" accessibilityLabel={`View job at ${info.building}`} onPress={onPress} style={styles.assignedTopRow}>
         <View style={styles.jobsBuildingThumb}>
           <AppIcon name="business-outline" size={34} color={colors.primary} />
@@ -3794,7 +3880,7 @@ function AssignedJobCard({
       </View>
       <View style={styles.assignedTimeBox}>
         <AppIcon name="time-outline" size={17} color={colors.muted} />
-        <Text style={styles.assignedTime}>{job.preferredTimeSlot || "Visit time not scheduled"}</Text>
+        <Text style={styles.assignedTime}>{[job.preferredVisitDate, job.preferredTimeSlot].filter(Boolean).join(" · ") || "Visit not scheduled"}</Text>
       </View>
       <View style={styles.assignedBottomRow}>
         <Pressable accessibilityRole="button" style={styles.viewButton} onPress={onPress}>
@@ -3802,11 +3888,16 @@ function AssignedJobCard({
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          style={[styles.startButton, !canStart && styles.upcomingButton]}
+          style={({ pressed }) => [
+            styles.startButton,
+            !isPrimaryAction && !isCompleted && styles.upcomingButton,
+            isCompleted && styles.completedButton,
+            pressed && styles.serviceActionPressed,
+          ]}
           onPress={canStart ? onStart : onPress}
         >
-          <Text style={[styles.startButtonText, !canStart && styles.upcomingButtonText]}>
-            {canStart ? (job.status === "ASSIGNED" ? "Review job" : "Start travel") : job.status === "COMPLETED" ? "Completed" : IN_PROGRESS.includes(job.status) ? "Continue Job" : "View Status"}
+          <Text style={[styles.startButtonText, !isPrimaryAction && !isCompleted && styles.upcomingButtonText]}>
+            {canStart ? (job.status === "ASSIGNED" ? "Review job" : "Start travel") : job.status === "COMPLETED" ? "Completed" : canContinue ? "Continue Job" : "View Status"}
           </Text>
         </Pressable>
       </View>

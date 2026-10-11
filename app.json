@@ -20,6 +20,8 @@
       }
     },
     "android": {
+      "versionCode": 3,
+      "allowBackup": false,
       "package": "com.valor.technician",
       "permissions": [
         "ACCESS_COARSE_LOCATION",

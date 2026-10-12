@@ -1,4 +1,6 @@
 import AvailabilityPicker from "../components/AvailabilityPicker";
+import WorkdayGraphic from "../components/WorkdayGraphic";
+import { LinearGradient } from "expo-linear-gradient";
 import { useGreeting } from "../hooks/useGreeting";
 import { typographyStyles as appTypography } from "../theme/typography";
 import React from "react";
@@ -74,15 +76,18 @@ export default function DashboardScreen(props: Props) {
           <Pressable accessibilityRole="button" accessibilityLabel="Open profile" onPress={props.onProfile} style={[s.iconButton, s.profileIcon]}><Ionicons name="person-outline" size={22} color={c.blue} /></Pressable>
         </View>
       </View>
-      <View style={s.hero}>
+      <LinearGradient colors={["#496C9A", "#527D9C", "#548B8D"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.hero}>
         <Text style={s.greeting}>{greeting}, {name}</Text>
-        <Text style={s.heroTitle}>Your workday,{"\n"}at a glance.</Text>
+        <View style={[s.heroMain, fontScale >= 1.4 && { flexDirection: "column", alignItems: "flex-start" }]}>
+          <Text style={s.heroTitle}>Your workday,{"\n"}at a glance.</Text>
+          <WorkdayGraphic />
+        </View>
         <Text style={s.heroDescription}>Manage your jobs, plan your visits and keep customers informed.</Text>
         <View style={s.heroFooter}>
           <AvailabilityPicker value={profile?.availabilityStatus} onSave={props.onAvailability} />
           <Text style={s.employee}>{profile?.employeeId || "Valor service team"}</Text>
         </View>
-      </View>
+      </LinearGradient>
       {profile?.assignedArea && <View style={s.area}><Ionicons name="location-outline" size={18} color={c.muted} /><Text style={s.meta}>Service area: {profile.assignedArea}</Text></View>}
       <View style={s.section}><Text style={s.heading}>Work overview</Text><Text style={s.caption}>Your assigned workload</Text></View>
       {loading && !dashboard ? <ActivityIndicator color={c.blue} accessibilityLabel="Loading dashboard" /> : <View style={s.grid}>
@@ -124,7 +129,7 @@ const s = StyleSheet.create({
   brand: { flexDirection: "row", alignItems: "center", gap: 8 }, brandMark: { color: "#F6A800", fontSize: 32, fontWeight: "700" }, brandName: { color: c.navy, fontSize: 21, fontWeight: "700", letterSpacing: 2 }, brandMeta: { ...appTypography.secondary, color: c.muted, letterSpacing: 1.5 },
   topActions: { flexDirection: "row", gap: 4 }, iconButton: { minWidth: 44, minHeight: 48, alignItems: "center", justifyContent: "center" }, profileIcon: { backgroundColor: "#EAF2FF", borderRadius: 24 },
   notificationBadge: { ...appTypography.secondary, position: "absolute", top: 2, right: 0, borderRadius: 10, minWidth: 18, padding: 2, backgroundColor: c.red, color: "white", textAlign: "center" },
-  hero: { backgroundColor: c.navy, borderRadius: 20, padding: 24, gap: 12 }, greeting: { ...appTypography.body, color: "#DCE8F7" }, heroTitle: { ...appTypography.screenTitle, color: "white" }, heroDescription: { ...appTypography.body, color: "#DCE8F7", maxWidth: 520 }, heroFooter: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 },
+  hero: { borderRadius: 24, padding: 20, gap: 10, borderWidth: 1, borderColor: "#7496B0" }, heroMain: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }, greeting: { ...appTypography.body, color: "#F1F6FC" }, heroTitle: { ...appTypography.screenTitle, fontWeight: "600", color: "white", flexShrink: 1 }, heroDescription: { ...appTypography.body, color: "#F1F6FC", maxWidth: 520 }, heroFooter: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 },
   availability: { backgroundColor: "#EAF7EF", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 6 }, availabilityText: { ...appTypography.secondary, color: c.navy }, employee: { ...appTypography.secondary, color: "#DCE8F7" }, area: { flexDirection: "row", gap: 6, alignItems: "center" },
   section: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }, heading: { ...appTypography.sectionHeading, color: c.navy }, grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   metric: { flexGrow: 1, borderRadius: 14, padding: 16, backgroundColor: "white", borderWidth: 1, borderColor: c.border, minHeight: 126, gap: 8 }, metricValue: { ...appTypography.screenTitle, color: c.navy }, metricLabel: { ...appTypography.secondary, color: c.muted },

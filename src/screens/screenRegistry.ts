@@ -74,7 +74,6 @@ export const TECHNICIAN_PRIMARY_NAV = [
   "jobs",
   "visits",
   "notifications",
-  "history",
   "profile",
 ] as const satisfies readonly Screen[];
 

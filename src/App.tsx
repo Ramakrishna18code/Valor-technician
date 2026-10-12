@@ -7,6 +7,8 @@ import ApplicationProgress from "./components/ApplicationProgress";
 import BrandLogo from "./components/BrandLogo";
 import { typographyStyles as applicationTypography } from "./theme/typography";
 import BottomNav from "./components/TechnicianTabBar";
+import WorkdayGraphic from "./components/WorkdayGraphic";
+import { AlertsHeader, AlertsEmpty } from "./components/AlertsExperience";
 import ProfileScreen from "./screens/ProfileScreen";
 import HistoryScreen from "./screens/HistoryScreen";
 import VisitsScreen from "./screens/VisitsScreen";
@@ -2171,25 +2173,26 @@ function Jobs({ items, filter, loading, onFilter, onJob, onStartJob, onRefresh }
     refreshing={refreshing} onRefresh={refresh}
     data={loading ? [] : visibleJobs} keyExtractor={item => String(item.id)} keyboardShouldPersistTaps="handled"
     ListHeaderComponent={<View style={styles.jobHeader}>
-      <View style={styles.jobsIntro}>
-        <View style={styles.jobsResultsRow}>
-          <Text style={styles.jobsTitle}>Jobs</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Refresh jobs" accessibilityState={{disabled: refreshing || loading}} disabled={refreshing || loading} onPress={refresh} style={styles.jobsUtilityButton}>
-            {refreshing ? <ActivityIndicator size="small" color={colors.info} /> : <AppIcon name="refresh-outline" size={20} color={colors.info} />}
-            <Text style={styles.jobsFilterText}>{refreshing ? "Refreshing" : "Refresh"}</Text>
+      <LinearGradient colors={["#526F9D", "#64899B", "#61928B"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.jobsHero}>
+        <View style={styles.jobsHeroCopy}>
+          <Text style={styles.jobsHeroTitle}>Jobs</Text>
+          <Text style={styles.jobsHeroDescription}>Your next task starts here.</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Refresh jobs" accessibilityState={{disabled: refreshing || loading}} disabled={refreshing || loading} onPress={refresh} style={styles.jobsHeroRefresh}>
+            {refreshing ? <ActivityIndicator size="small" color="#FFFFFF" /> : <AppIcon name="refresh-outline" size={16} color="#FFFFFF" />}
+            <Text style={styles.jobsHeroDescription}>{refreshing ? "Refreshing" : "Refresh"}</Text>
           </Pressable>
         </View>
-        <Text style={styles.jobsDescription}>Find a job, review the site details and update your progress.</Text>
-      </View>
+        <WorkdayGraphic />
+      </LinearGradient>
       <View style={styles.jobsSearchField}><AppIcon name="search-outline" size={20} color={colors.muted} /><TextInput accessibilityLabel="Search assigned jobs" style={styles.jobsSearchText} value={search} onChangeText={setSearch} placeholder="Search job, building or lift" placeholderTextColor={colors.muted} /></View>
       <View style={styles.jobsFilters}>
       <View style={styles.jobsFilterGroup}>
-        <Text style={styles.jobsFilterLabel}>Job status</Text>
-        <FilterBar labels={JOB_FILTERS.map(item => item.label)} active={filter} onChange={onFilter} wrap customerTheme />
+        <View style={styles.jobsFilterHeading}><AppIcon name="options-outline" size={15} color="#59799B" /><Text style={styles.jobsCompactLabel}>Job status</Text></View>
+        <FilterBar labels={JOB_FILTERS.map(item => item.label)} active={filter} onChange={onFilter} customerTheme />
       </View>
       <View style={styles.jobsFilterGroup}>
-        <Text style={styles.jobsFilterLabel}>Visit date</Text>
-        <FilterBar labels={DATE_FILTERS.map(item => item.label)} active={dateFilter} onChange={setDateFilter} wrap customerTheme />
+        <View style={styles.jobsFilterHeading}><AppIcon name="calendar-outline" size={15} color="#568B80" /><Text style={styles.jobsCompactLabel}>Visit date</Text></View>
+        <FilterBar labels={DATE_FILTERS.map(item => item.label)} active={dateFilter} onChange={setDateFilter} customerTheme />
       </View>
       {["thisMonth", "nextMonth", "pastMonth"].includes(DATE_FILTERS[dateFilter].key) && <View style={styles.subFilterRow}>
         <View style={{flex:1}}><Text style={styles.inputLabel}>Year</Text><TextInput style={styles.input} accessibilityLabel="Year" value={year} onChangeText={setYear} keyboardType="number-pad" /></View>
@@ -3135,21 +3138,17 @@ function Notifications({
   });
   const grouped = variant === "notifications" ? groupNotificationItems(items) : items.length ? [{title: "", items}] : [];
   return (
-    <View style={styles.contentFill}>
-      <View style={styles.screenTopRow}>
-        <View style={{flexGrow: 1, flexBasis: 220, minWidth: 0}}>
-          <Text style={styles.jobsTitle}>{variant === "alerts" ? "Alerts & Messages" : "Notifications"}</Text>
-          <Text style={styles.settingsSubtitle}>Stay updated with your jobs, alerts and important information.</Text>
-        </View>
-        <Pressable style={styles.filterChipButton} onPress={variant === "alerts" ? onMarkAll : onRefresh}>
-          <Text style={styles.refreshText}>{variant === "alerts" ? "Mark All Read" : "Refresh"}</Text>
-        </Pressable>
-      </View>
-      <SegmentedTabs labels={filters} active={Math.max(0, filters.indexOf(filter))} onChange={(index) => setFilter(filters[index])} />
+    <View style={[styles.contentFill, { paddingBottom: 8 }]}>
       <FlatList
         data={grouped}
         keyExtractor={(group) => group.title || "alerts"}
         contentContainerStyle={styles.listContent}
+        ListHeaderComponent={<AlertsHeader title={variant === "alerts" ? "Alerts & Messages" : "Notifications"}
+          unread={allItems.filter(item => item.status !== "READ").length}
+          action={variant === "alerts" ? "Mark all read" : "Refresh"}
+          onAction={variant === "alerts" ? onMarkAll : onRefresh}
+          disabled={variant === "alerts" && !allItems.some(item => item.status !== "READ")}
+          filters={filters} filter={filter} onFilter={setFilter} />}
         renderItem={({ item: group }) => (
           <View>
             {group.title ? <Text style={styles.groupTitle}>{group.title}</Text> : null}
@@ -3158,7 +3157,7 @@ function Notifications({
             ))}
           </View>
         )}
-        ListEmptyComponent={<Empty text="No notifications." />}
+        ListEmptyComponent={<AlertsEmpty filter={filter} />}
       />
     </View>
   );
@@ -3608,13 +3607,33 @@ function FilterBar({
   wrap?: boolean;
   customerTheme?: boolean;
 }) {
-  if (wrap) return <View style={styles.filterWrap}>{labels.map((item, index) => <Pressable
+  const row = useRef<ScrollView>(null);
+  const offsets = useRef<Record<number, number>>({});
+  useEffect(() => {
+    if (customerTheme && offsets.current[active] !== undefined) {
+      row.current?.scrollTo({ x: Math.max(0, offsets.current[active] - 8), animated: false });
+    }
+  }, [active, customerTheme]);
+  if (customerTheme && !wrap) return <ScrollView ref={row} horizontal showsHorizontalScrollIndicator
+    style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 6, paddingBottom: 7, alignItems: "center" }}>
+    {labels.map((item, index) => <Pressable key={item} accessibilityRole="button"
+      accessibilityState={{ selected: active === index }} aria-pressed={active === index}
+      onLayout={event => {
+        offsets.current[index] = event.nativeEvent.layout.x;
+        if (index === active) row.current?.scrollTo({ x: Math.max(0, offsets.current[index] - 8), animated: false });
+      }}
+      style={[styles.filter, styles.jobsFilterChip, { marginRight: 0, flexShrink: 0 }, active === index && styles.jobsFilterSelected]}
+      onPress={() => onChange(index)}>
+      <Text numberOfLines={1} style={[styles.jobsFilterText, active === index && styles.jobsFilterSelectedText, styles.jobsCompactText]}>{item}</Text>
+    </Pressable>)}
+  </ScrollView>;
+  if (wrap) return <View style={[styles.filterWrap, customerTheme && styles.jobsCompactWrap]}>{labels.map((item, index) => <Pressable
     key={item}
     accessibilityRole="button"
     accessibilityState={{ selected: active === index }}
     style={[styles.filter, styles.filterWrappedItem, active === index && styles.selected, customerTheme && styles.jobsFilterChip, customerTheme && active === index && styles.jobsFilterSelected]}
     onPress={() => onChange(index)}
-  ><Text style={[styles.outlineText, customerTheme && styles.jobsFilterText, customerTheme && active === index && styles.jobsFilterSelectedText]}>{item}</Text></Pressable>)}</View>;
+  ><Text style={[styles.outlineText, customerTheme && styles.jobsFilterText, customerTheme && active === index && styles.jobsFilterSelectedText, customerTheme && styles.jobsCompactText]}>{item}</Text></Pressable>)}</View>;
   return (
     <ScrollView
       horizontal

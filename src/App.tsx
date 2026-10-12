@@ -30,7 +30,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -41,6 +40,9 @@ import {
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
+import * as SecureStore from "expo-secure-store";
+import { SafeAreaView } from "react-native-safe-area-context";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { environment } from "./config/environment";
 import { setSessionExpiredHandler } from "./api/client";
@@ -2740,6 +2742,7 @@ function CompletedJobView({
   onBackHome: () => void;
 }) {
   const [showHistory, setShowHistory] = useState(false);
+  const [openSection, setOpenSection] = useState("summary");
   const formatCompletedDate = (value?: string | null) => {
     if (!value || Number.isNaN(new Date(value).getTime())) return "Not recorded";
     return new Date(value).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -2776,7 +2779,8 @@ function CompletedJobView({
         <DetailRow icon="time-outline" label="Completed on" value={formatCompletedDate(completionDate)} />
       </View>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Completion summary</Text>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: openSection === "summary" }} style={styles.completionHeading} onPress={() => setOpenSection(openSection === "summary" ? "" : "summary")}><Text style={styles.cardTitle}>Completed summary</Text><AppIcon name={openSection === "summary" ? "chevron-up" : "chevron-down"} size={22} color={colors.primary} /></Pressable>
+        {openSection === "summary" && <>
         <View style={styles.completionChecks}>
           {checks.map(check => <View key={check.title} style={styles.completionCheckItem}>
             <AppIcon name={check.done ? "checkmark-circle" : "information-circle-outline"} size={22} color={check.done ? "#187044" : colors.muted} />
@@ -2786,9 +2790,11 @@ function CompletedJobView({
             </View>
           </View>)}
         </View>
+        </>}
       </View>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Service report</Text>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: openSection === "report" }} style={styles.completionHeading} onPress={() => setOpenSection(openSection === "report" ? "" : "report")}><Text style={styles.cardTitle}>Service report</Text><AppIcon name={openSection === "report" ? "chevron-up" : "chevron-down"} size={22} color={colors.primary} /></Pressable>
+        {openSection === "report" && <>
         {[
           { title: "Diagnosis", value: detail.report?.diagnosis },
           { title: "Work performed", value: detail.report?.workPerformed },
@@ -2798,13 +2804,16 @@ function CompletedJobView({
           <Text style={styles.completionLabel}>{field.title}</Text>
           <Text selectable style={styles.completionBody}>{field.value?.trim() || "Not recorded"}</Text>
         </View>)}
+        </>}
       </View>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Payment details</Text>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: openSection === "payment" }} style={styles.completionHeading} onPress={() => setOpenSection(openSection === "payment" ? "" : "payment")}><Text style={styles.cardTitle}>Payment details</Text><AppIcon name={openSection === "payment" ? "chevron-up" : "chevron-down"} size={22} color={colors.primary} /></Pressable>
+        {openSection === "payment" && <>
         <DetailRow icon="card-outline" label="Payment status" value={servicePayment?.payment ? label(servicePayment.payment.status || "Not recorded") : "No payment recorded"} />
         {servicePayment?.invoice && <DetailRow icon="document-text-outline" label="Invoice" value={servicePayment.invoice.invoiceNumber || "Invoice number not available"} />}
         {servicePayment?.invoice?.totalAmount != null && <DetailRow icon="cash-outline" label="Invoice total" value={`${servicePayment.invoice.currency || "INR"} ${servicePayment.invoice.totalAmount.toFixed(2)}`} />}
         {servicePayment?.payment?.amount != null && <DetailRow icon="cash-outline" label="Payment amount" value={`${servicePayment.payment.currency || "INR"} ${servicePayment.payment.amount.toFixed(2)}`} />}
+        </>}
       </View>
       <View style={styles.card}>
         <Pressable accessibilityRole="button" accessibilityState={{ expanded: showHistory }} style={({ pressed }) => [styles.completionHeading, pressed && styles.serviceActionPressed]} onPress={() => setShowHistory(value => !value)}>
@@ -3167,40 +3176,34 @@ function ProfileDetailsPage({ profile, onSave }: { profile: TechnicianProfileVie
   const [profilePoint, setProfilePoint] = useState<{latitude: number; longitude: number} | null>(profile?.latitude != null && profile?.longitude != null ? { latitude: profile.latitude, longitude: profile.longitude } : null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [dobOpen, setDobOpen] = useState(false);
+  const [genderOpen, setGenderOpen] = useState(false);
   const update = (key: keyof TechnicianProfileView, value: string) => setDraft(current => ({...current, [key]: value}));
   const save = async () => {
     setSaving(true); setError(null);
     try { await onSave({dateOfBirth: draft.dateOfBirth || null, gender: draft.gender || null, address: draft.address || null, latitude: profilePoint?.latitude ?? null, longitude: profilePoint?.longitude ?? null, emergencyContactName: draft.emergencyContactName || null, emergencyContactPhone: draft.emergencyContactPhone || null}); }
     catch (problem) { setError(err(problem)); } finally { setSaving(false); }
   };
+  const display = (value?: string | null) => value?.trim() || "Not provided";
+  const formattedDob = draft.dateOfBirth ? new Date(`${draft.dateOfBirth}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "Not provided";
+  const chooseDob = (_event: unknown, value?: Date) => { setDobOpen(false); if (value) update("dateOfBirth", value.toISOString().slice(0, 10)); };
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.profileContent}>
     <ProfilePhotoEditor api={technicianApi} />
-    <Text style={styles.jobsTitle}>Personal information</Text>
-    <Text style={styles.settingsSubtitle}>Keep your contact information current. Contact your administrator to change account details.</Text>
-    <Text style={styles.settingsSection}>Account details</Text>
-    <View style={styles.twoColumnForm}>
-      <ProfileField label="Employee ID" value={profile?.employeeId || "Not provided"} disabled />
-      <ProfileField label="Phone number" value={profile?.phone || "Not provided"} disabled />
-      <ProfileField label="Email address" value={profile?.email || "Not provided"} disabled />
-      <ProfileField label="Assigned area" value={profile?.assignedArea || "Not assigned"} disabled />
-    </View>
-    <Text style={styles.settingsSection}>Personal details</Text>
-    <View style={styles.twoColumnForm}>
-      <ProfileField label="Date of birth (YYYY-MM-DD)" value={draft.dateOfBirth || ""} onChangeText={text => update("dateOfBirth", text)} />
-      <ProfileField label="Gender (optional)" value={draft.gender || ""} onChangeText={text => update("gender", text)} />
-      <ProfileField wide label="Address" value={draft.address || ""} onChangeText={text => update("address", text)} />
-    </View>
-    <Text style={styles.settingsSection}>Default location</Text>
-    <Text style={styles.muted}>This is a saved home/start preference for operational proximity only. Valor does not continuously track it.</Text>
-    <Pressable style={styles.greenButton} onPress={async () => { const permission = await Location.requestForegroundPermissionsAsync(); if (!permission.granted) { setError("Location permission was not granted. You can place the pin manually."); return; } const point = await Location.getCurrentPositionAsync({accuracy: Location.Accuracy.Balanced}); setProfilePoint({latitude: point.coords.latitude, longitude: point.coords.longitude}); }}><Text style={styles.primaryText}>Use current location</Text></Pressable>
-    {profilePoint ? <><SiteMap destination={profilePoint} title="Choose technician default location" onSelect={setProfilePoint} /><Text style={styles.muted}>Tap the map or drag the pin to adjust the location.</Text></> : <Text style={styles.muted}>No default location saved yet.</Text>}
-    <Text style={styles.settingsSection}>Emergency contact</Text>
-    <View style={styles.twoColumnForm}>
-      <ProfileField label="Contact name" value={draft.emergencyContactName || ""} onChangeText={text => update("emergencyContactName", text)} />
-      <ProfileField label="Contact phone" value={draft.emergencyContactPhone || ""} onChangeText={text => update("emergencyContactPhone", text)} />
-    </View>
+    <View style={styles.profileViewHeader}><View><Text style={styles.jobsTitle}>Personal details</Text><Text style={styles.settingsSubtitle}>Your technician account information</Text></View><Pressable style={styles.outlineButton} onPress={() => setEditing(value => !value)}><AppIcon name={editing ? "close-outline" : "create-outline"} size={17} color={colors.info} /><Text style={styles.outlineText}>{editing ? "Cancel" : "Edit"}</Text></Pressable></View>
+    <ProfileSection title="Account details" icon="person-circle-outline" defaultOpen rows={[['Employee ID', display(profile?.employeeId)], ['Phone number', display(profile?.phone)], ['Email address', display(profile?.email)], ['Assigned area', display(profile?.assignedArea)]]} />
+    <ProfileSection title="Personal details" icon="id-card-outline" defaultOpen={!editing} rows={editing ? [] : [['Date of birth', formattedDob], ['Gender', display(profile?.gender)]]}>
+      {editing && <View style={styles.twoColumnForm}><Pressable style={styles.profilePicker} onPress={() => setDobOpen(true)}><Text style={styles.profileFieldLabel}>Date of birth</Text><Text style={styles.profilePickerValue}>{formattedDob}</Text></Pressable><Pressable style={styles.profilePicker} onPress={() => setGenderOpen(value => !value)}><Text style={styles.profileFieldLabel}>Gender</Text><Text style={styles.profilePickerValue}>{display(draft.gender)}</Text>{genderOpen && <View style={styles.profileOptions}>{["Female", "Male", "Non-binary", "Prefer not to say"].map(option => <Pressable key={option} onPress={() => { update("gender", option); setGenderOpen(false); }} style={styles.profileOption}><Text style={styles.profilePickerValue}>{option}</Text></Pressable>)}</View>}</Pressable><ProfileField wide label="Address" value={draft.address || ""} onChangeText={text => update("address", text)} /></View>}
+    </ProfileSection>
+    {dobOpen && <DateTimePicker value={draft.dateOfBirth ? new Date(`${draft.dateOfBirth}T12:00:00`) : new Date(1990, 0, 1)} mode="date" display="calendar" maximumDate={new Date()} onChange={chooseDob} />}
+    <ProfileSection title="Location" icon="location-outline" rows={editing ? [] : [['Default location', profilePoint ? `${profilePoint.latitude.toFixed(5)}, ${profilePoint.longitude.toFixed(5)}` : "Not saved"]]}>
+      {editing && <><Text style={styles.muted}>Saved for operational proximity only. Valor does not continuously track it.</Text><Pressable style={styles.greenButton} onPress={async () => { try { const permission = await Location.requestForegroundPermissionsAsync(); if (!permission.granted) { setError("Location permission was not granted. You can place the pin manually."); return; } const point = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); setProfilePoint({ latitude: point.coords.latitude, longitude: point.coords.longitude }); } catch { setError("Current location is unavailable. Enable location services or choose the pin manually."); } }}><Text style={styles.primaryText}>Use current location</Text></Pressable>{profilePoint ? <><SiteMap destination={profilePoint} title="Choose default location" onSelect={setProfilePoint} /><Text style={styles.muted}>Tap the map or drag the pin to adjust it.</Text></> : <Text style={styles.muted}>No default location saved yet.</Text>}</>}
+    </ProfileSection>
+    <ProfileSection title="Emergency contact" icon="call-outline" rows={editing ? [] : [['Contact name', display(profile?.emergencyContactName)], ['Contact phone', display(profile?.emergencyContactPhone)]]}>
+      {editing && <View style={styles.twoColumnForm}><ProfileField label="Contact name" value={draft.emergencyContactName || ""} onChangeText={text => update("emergencyContactName", text)} /><ProfileField label="Contact phone" value={draft.emergencyContactPhone || ""} onChangeText={text => update("emergencyContactPhone", text)} /></View>}
+    </ProfileSection>
     {error && <Text accessibilityRole="alert" style={styles.errorText}>{error}</Text>}
-    <Pressable accessibilityRole="button" disabled={saving} style={[styles.greenButton, saving && styles.disabled]} onPress={save}><Text style={styles.primaryText}>{saving ? "Saving?" : "Save changes"}</Text></Pressable>
+    {editing && <Pressable accessibilityRole="button" disabled={saving} style={[styles.greenButton, saving && styles.disabled]} onPress={save}><Text style={styles.primaryText}>{saving ? "Saving…" : "Save changes"}</Text></Pressable>}
   </ScrollView>;
 }
 function ProfilePasswordPage({ onDone }: { onDone: () => void }) {
@@ -3239,10 +3242,12 @@ function HelpPage() {
 function LocationPage() {
   const [status, setStatus] = useState("Permission not requested");
   const request = async () => {
-    const result = await Location.requestForegroundPermissionsAsync();
-    setStatus(
-      result.granted ? "Location enabled" : "Location permission denied",
-    );
+    try {
+      const result = await Location.requestForegroundPermissionsAsync();
+      setStatus(result.granted ? "Location enabled" : "Location permission denied");
+    } catch {
+      setStatus("Location services are unavailable. You can still choose a site pin manually.");
+    }
   };
   return (
     <ScrollView contentContainerStyle={styles.profileContent}>
@@ -3273,23 +3278,18 @@ function LanguagePage() {
   );
 }
 function ThemePage() {
+  const [theme, setTheme] = useState<"light" | "dark" | "system">("system");
+  useEffect(() => { void SecureStore.getItemAsync("valor-technician-theme").then(value => { if (value === "light" || value === "dark" || value === "system") setTheme(value); }); }, []);
+  const choose = (value: "light" | "dark" | "system") => { setTheme(value); void SecureStore.setItemAsync("valor-technician-theme", value); };
+  const options = [{ value: "system" as const, label: "System default", icon: "phone-portrait-outline" as const }, { value: "light" as const, label: "Light mode", icon: "sunny-outline" as const }, { value: "dark" as const, label: "Dark mode", icon: "moon-outline" as const }];
   return (
     <ScrollView contentContainerStyle={styles.profileContent}>
       <Text style={styles.jobsTitle}>Theme</Text>
       <Text style={styles.settingsSubtitle}>
         Choose how Valor appears on your device.
       </Text>
-      <Pressable style={[styles.settingsRow, styles.settingsRowSelected]}>
-        <View style={styles.settingsIcon}><AppIcon name="sunny-outline" size={18} color={colors.info} /></View>
-        <Text style={styles.settingsTitle}>Light mode</Text>
-        <Text style={styles.chevron}>Selected</Text>
-      </Pressable>
-      <Info
-        title="Dark mode"
-        rows={[
-          "Dark mode will be available when the shared app preference is enabled.",
-        ]}
-      />
+      {options.map(option => <Pressable key={option.value} accessibilityRole="radio" accessibilityState={{ selected: theme === option.value }} onPress={() => choose(option.value)} style={[styles.settingsRow, theme === option.value && styles.settingsRowSelected]}><View style={styles.settingsIcon}><AppIcon name={option.icon} size={18} color={theme === option.value ? colors.info : colors.muted} /></View><Text style={styles.settingsTitle}>{option.label}</Text>{theme === option.value && <Text style={styles.chevron}>Selected</Text>}</Pressable>)}
+      <Info title="Theme tokens" rows={["Primary text: #FAFAFA · Secondary text: #A1A1AA in dark mode.", "Dark surfaces use #18181B and #27272A with visible borders and state feedback.", "Preference is saved on this device."]} />
     </ScrollView>
   );
 }
@@ -4111,6 +4111,11 @@ function ProfileField({
       />
     </View>
   );
+}
+
+function ProfileSection({ title, icon, rows, children, defaultOpen = false }: { title: string; icon: IoniconName; rows: string[][]; children?: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return <View style={styles.profileSectionCard}><Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} style={styles.profileSectionHeader} onPress={() => setOpen(value => !value)}><View style={styles.profileSectionIcon}><AppIcon name={icon} size={19} color={colors.info} /></View><Text style={styles.profileSectionTitle}>{title}</Text><AppIcon name={open ? "chevron-up" : "chevron-down"} size={20} color={colors.muted} /></Pressable>{open && <View style={styles.profileSectionBody}>{rows.map(([label, value]) => <View key={label} style={styles.profileValueRow}><Text style={styles.profileValueLabel}>{label}</Text><Text selectable style={styles.profileValue}>{value}</Text></View>)}{children}</View>}</View>;
 }
 
 function PasswordInput({

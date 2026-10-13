@@ -3,9 +3,38 @@ import React from "react";
 jest.mock("react-native", () => {
   const React = require("react");
   const element = (name: string) => ({ children, ...props }: any) => React.createElement(name, props, children);
+  class AnimatedValue {
+    value: number;
+    constructor(initial: number) {
+      this.value = initial;
+    }
+    setValue(next: number) {
+      this.value = next;
+    }
+    interpolate() {
+      return 0;
+    }
+  }
+  const animation = () => ({ start: jest.fn(), stop: jest.fn() });
   return {
     ActivityIndicator: element("ActivityIndicator"),
+    AccessibilityInfo: {
+      isReduceMotionEnabled: jest.fn(async () => true),
+      addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+    },
+    Animated: {
+      View: element("Animated.View"),
+      Value: AnimatedValue,
+      loop: animation,
+      sequence: jest.fn(() => animation()),
+      timing: animation,
+    },
+    AppState: {
+      currentState: "active",
+      addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+    },
     FlatList: ({ data = [], renderItem, ...props }: any) => React.createElement("FlatList", props, data.map((item: unknown, index: number) => renderItem({ item, index }))),
+    Easing: { inOut: (value: unknown) => value, sin: jest.fn() },
     Image: element("Image"),
     Modal: element("Modal"),
     Pressable: element("Pressable"),
@@ -28,6 +57,8 @@ jest.mock("expo-linear-gradient", () => {
   const mockReact = require("react");
   return { LinearGradient: ({ children, ...props }: any) => mockReact.createElement("LinearGradient", props, children) };
 });
+jest.mock("../assets/google-logo.png", () => "google-logo");
+jest.mock("../assets/valor-field-technician.png", () => "technician-image");
 jest.mock("../src/components/AvailabilityPicker", () => ({ __esModule: true, default: () => null }));
 jest.mock("../src/components/WorkdayGraphic", () => ({ __esModule: true, default: () => null }));
 jest.mock("../src/components/BrandLogo", () => ({ __esModule: true, default: () => null }));

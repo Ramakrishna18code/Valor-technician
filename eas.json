@@ -5,9 +5,6 @@
   "build": {
     "preview": {
       "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "http://192.168.88.22:8081"
-      },
       "android": {
         "buildType": "apk"
       }

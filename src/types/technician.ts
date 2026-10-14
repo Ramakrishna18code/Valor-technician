@@ -19,6 +19,17 @@ export type AssignmentStatus = 'ASSIGNED' | 'ACCEPTED' | 'REJECTED' | 'RELEASED'
 export type VisitStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type AvailabilityStatus = 'AVAILABLE' | 'BUSY' | 'OFF_DUTY' | 'ON_LEAVE';
 export type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED' | 'READ';
+export type InspectionStatus = 'REQUESTED' | 'SCHEDULED' | 'ASSIGNED' | 'IN_PROGRESS' | 'SUBMITTED' | 'REVIEW_REQUIRED' | 'APPROVED' | 'REWORK_REQUIRED' | 'CANCELLED' | 'RESCHEDULE_REQUIRED';
+export interface InspectionSummary {
+  id: number; installationRequestId: number; status: InspectionStatus; scheduledAt?: string | null; scheduledTimezone?: string | null;
+  assignedTechnicianId?: number | null; visitStartedAt?: string | null; submittedAt?: string | null; version: number;
+  propertyType?: string | null; siteAddressLine1?: string | null; siteAddressLine2?: string | null; siteLocality?: string | null;
+  siteCity?: string | null; siteState?: string | null; sitePostalCode?: string | null; siteCountry?: string | null; sitePropertyDescription?: string | null;
+}
+export interface InspectionDetail extends InspectionSummary {
+  measurements?: string | null; findings?: string | null; risks?: string | null; siteConstraints?: string | null; readinessObservations?: string | null; issues?: string | null; recommendedActions?: string | null; recommendations?: string | null;
+  conclusion?: string | null; assessmentConclusion?: string | null; evidence?: Array<{ id: number; documentType?: string | null; originalFilename?: string | null; contentType?: string | null; storageKey?: string | null }>;
+}
 
 export interface ApiEnvelope<T> {
   success: boolean;

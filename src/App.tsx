@@ -12,6 +12,7 @@ import { AlertsHeader, AlertsEmpty } from "./components/AlertsExperience";
 import ProfileScreen from "./screens/ProfileScreen";
 import HistoryScreen from "./screens/HistoryScreen";
 import VisitsScreen from "./screens/VisitsScreen";
+import InspectionsScreen from "./screens/InspectionsScreen";
 import Dashboard from "./screens/DashboardScreen";
 import WelcomeScreen from "./screens/WelcomeScreen";
 import { ServiceHero, ServiceReveal, ServiceSection } from "./components/ServiceExperience";
@@ -669,6 +670,7 @@ export default function App() {
             onStartJob={openJob}
           />
         )}
+        {screen === "inspections" && <InspectionsScreen />}
         {screen === "history" && (
           <HistoryScreen
             items={history?.items ?? []}
@@ -1557,7 +1559,7 @@ function ProfessionalDetailsScreen({
         <Pressable
           style={[
             styles.segment,
-            value.willingToWorkAtHeights && styles.segmentActive,
+            Boolean(value.willingToWorkAtHeights) && styles.segmentActive,
           ]}
           onPress={() => update("willingToWorkAtHeights", true)}
         >

@@ -8,6 +8,7 @@
 export type Screen =
   | "dashboard"
   | "jobs"
+  | "inspections"
   | "visits"
   | "notifications"
   | "history"
@@ -46,6 +47,7 @@ export const AUTH_SCREEN_ORDER = [
 export const TECHNICIAN_SCREEN_ORDER = [
   "dashboard",
   "jobs",
+  "inspections",
   "jobDetail",
   "visits",
   "visitDetail",
@@ -72,6 +74,7 @@ export const TECHNICIAN_SCREEN_ORDER = [
 export const TECHNICIAN_PRIMARY_NAV = [
   "dashboard",
   "jobs",
+  "inspections",
   "visits",
   "notifications",
   "profile",
@@ -80,6 +83,7 @@ export const TECHNICIAN_PRIMARY_NAV = [
 export const TECHNICIAN_SCREEN_LABELS: Record<Screen, string> = {
   dashboard: "Dashboard",
   jobs: "Assigned Jobs",
+  inspections: "Site Inspections",
   visits: "Visits",
   notifications: "Notifications",
   history: "Job History",

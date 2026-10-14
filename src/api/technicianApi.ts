@@ -26,6 +26,8 @@ import type {
   VisitView,
   AvailabilityStatus,
   TechnicianServicePayment,
+  InspectionSummary,
+  InspectionDetail,
 } from "../types/technician";
 
 const pageItems = (page: any) => ({ ...page, items: page?.items || page?.content || [] });
@@ -76,6 +78,13 @@ async function attachmentForm(file: UploadFile) {
 }
 
 export const technicianApi = {
+  inspections(query: { status?: string; page?: number; size?: number } = {}) {
+    return requestData<PageView<InspectionSummary>>({ method: "GET", url: "/api/v1/technician/me/inspections", params: { page: 0, size: 20, ...query } }).then(pageItems);
+  },
+  inspection(id: number) { return requestData<InspectionDetail>({ method: "GET", url: `/api/v1/technician/me/inspections/${id}` }); },
+  startInspection(id: number, version: number) { return requestData<InspectionDetail>({ method: "POST", url: `/api/v1/technician/me/inspections/${id}/start`, data: { version } }); },
+  submitInspection(id: number, data: Record<string, unknown>) { return requestData<InspectionDetail>({ method: "PUT", url: `/api/v1/technician/me/inspections/${id}/assessment`, data }); },
+  addInspectionEvidence(id: number, data: { documentType: string; originalFilename: string; contentType: string; storageKey: string; version: number }) { return requestData<InspectionDetail>({ method: "POST", url: `/api/v1/technician/me/inspections/${id}/evidence`, data }); },
   searchPlaces: (q: string) => requestData<Place[]>({ method: "GET", url: `/api/v1/locations/search?q=${encodeURIComponent(q)}` }),
   getProfilePhoto: () => requestData<{ dataUri: string | null }>({ method: "GET", url: "/api/v1/profile/photo" }),
   async uploadProfilePhoto(file: UploadFile) { return requestData<{ dataUri: string | null }>({ method: "POST", url: "/api/v1/profile/photo", data: await attachmentForm(file), headers: Platform.OS === "web" ? undefined : { "Content-Type": "multipart/form-data" } }); },

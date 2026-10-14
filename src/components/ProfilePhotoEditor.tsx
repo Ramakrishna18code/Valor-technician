@@ -1,30 +1,45 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { typographyStyles as typography } from "../theme/typography";
 export type ProfilePhoto = { dataUri: string | null };
 type File = { uri: string; name: string; type: string; file?: unknown };
 type PhotoApi = { getProfilePhoto: () => Promise<ProfilePhoto>; uploadProfilePhoto: (file: File) => Promise<ProfilePhoto>; removeProfilePhoto: () => Promise<ProfilePhoto> };
-export default function ProfilePhotoEditor({ api, refreshKey = 0 }: { api: PhotoApi; refreshKey?: number }) {
+export default function ProfilePhotoEditor({ api, refreshKey = 0, compact = false }: { api: PhotoApi; refreshKey?: number; compact?: boolean }) {
   const photoRevision = useRef(0);
   const [photo, setPhoto] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { let active = true; const revision = ++photoRevision.current; api.getProfilePhoto().then(value => { if (active && revision === photoRevision.current) { setPhoto(value.dataUri); setError(null); } }).catch(() => { if (active && revision === photoRevision.current) setError("Could not load your photo. Choose a photo to retry."); }); return () => { active = false; }; }, [api, refreshKey, open]);
-  const choose = async () => {
+  const upload = async (file: File & { size?: number }) => {
     if (busy) return;
     photoRevision.current += 1; setBusy(true); setError(null);
+    try {
+      if (file.size && file.size > 5 * 1024 * 1024) throw new Error("Choose a photo smaller than 5 MB.");
+      const saved = await api.uploadProfilePhoto(file);
+      setPhoto(saved.dataUri); setOpen(false);
+    } catch (problem) { setError(problem instanceof Error ? problem.message : "Could not save your photo. Try again."); }
+    finally { setBusy(false); }
+  };
+  const choose = async () => {
+    if (busy) return;
+    setError(null);
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: ["image/jpeg", "image/png"], copyToCacheDirectory: true, multiple: false });
       if (result.canceled) return;
       const asset = result.assets[0];
-      if (asset.size && asset.size > 5 * 1024 * 1024) throw new Error("Choose a photo smaller than 5 MB.");
-      const saved = await api.uploadProfilePhoto({ uri: asset.uri, name: asset.name, type: asset.mimeType || "image/jpeg", file: asset.file });
-      setPhoto(saved.dataUri); setOpen(false);
-    } catch (problem) { setError(problem instanceof Error ? problem.message : "Could not save your photo. Try again."); }
-    finally { setBusy(false); }
+      await upload({ uri: asset.uri, name: asset.name, type: asset.mimeType || "image/jpeg", size: asset.size, file: asset.file });
+    } catch (problem) { setError(problem instanceof Error ? problem.message : "Could not open your photos. Please try again."); }
+  };
+  const chooseWeb = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    const uri = URL.createObjectURL(file);
+    try { await upload({ uri, name: file.name, type: file.type || "image/jpeg", size: file.size, file }); }
+    finally { URL.revokeObjectURL(uri); }
   };
   const remove = async () => {
     if (busy) return;
@@ -34,8 +49,8 @@ export default function ProfilePhotoEditor({ api, refreshKey = 0 }: { api: Photo
     finally { setBusy(false); }
   };
   return <>
-    <Pressable accessibilityRole="button" accessibilityLabel="Change profile photo" onPress={() => setOpen(true)} style={s.avatar}>
-      {photo ? <Image accessibilityLabel="Your profile photo" source={{ uri: photo }} style={s.image} /> : <MaterialCommunityIcons name="account-circle-outline" size={44} color="#246DE3" />}
+    <Pressable accessibilityRole="button" accessibilityLabel="Change profile photo" onPress={() => setOpen(true)} style={[s.avatar, compact && { width: 54, height: 54, borderRadius: 18, backgroundColor: "#F5F8FC", borderColor: "#FFFFFF" }]}>
+      {photo ? <Image accessibilityLabel="Your profile photo" source={{ uri: photo }} style={s.image} /> : <MaterialCommunityIcons name="account-circle-outline" size={compact ? 32 : 44} color={compact ? "#6484A9" : "#246DE3"} />}
       <View style={s.camera}><MaterialCommunityIcons name="camera-plus-outline" size={15} color="#FFFFFF" /></View>
     </Pressable>
     <Modal visible={open} transparent animationType="fade" onRequestClose={() => { if (!busy) setOpen(false); }}>
@@ -43,7 +58,12 @@ export default function ProfilePhotoEditor({ api, refreshKey = 0 }: { api: Photo
         <View style={s.preview}>{photo ? <Image source={{ uri: photo }} style={s.image} /> : <MaterialCommunityIcons name="account-circle-outline" size={68} color="#246DE3" />}</View>
         <Text style={s.title}>Your profile photo</Text><Text style={s.copy}>Choose a JPEG or PNG up to 5 MB. Your photo is saved to your account.</Text>
         {error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-        <Pressable accessibilityRole="button" accessibilityLabel="Choose profile photo" disabled={busy} onPress={() => void choose()} style={s.primary}>{busy ? <ActivityIndicator color="#FFFFFF" /> : <><MaterialCommunityIcons name="image-plus" size={20} color="#FFFFFF" /><Text style={s.primaryText}>Choose photo</Text></>}</Pressable>
+        {Platform.OS === "web" ? <View style={[s.primary, { position: "relative" }]}>
+          {busy ? <ActivityIndicator color="#FFFFFF" /> : <><MaterialCommunityIcons name="image-plus" size={20} color="#FFFFFF" /><Text style={s.primaryText}>Choose photo</Text></>}
+          {React.createElement("input", { type: "file", accept: "image/jpeg,image/png", role: "button", "aria-label": "Choose profile photo", disabled: busy,
+            onChange: (event: React.ChangeEvent<HTMLInputElement>) => void chooseWeb(event),
+            style: { position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: busy ? "wait" : "pointer" } })}
+        </View> : <Pressable accessibilityRole="button" accessibilityLabel="Choose profile photo" disabled={busy} onPress={() => void choose()} style={s.primary}>{busy ? <ActivityIndicator color="#FFFFFF" /> : <><MaterialCommunityIcons name="image-plus" size={20} color="#FFFFFF" /><Text style={s.primaryText}>Choose photo</Text></>}</Pressable>}
         {photo && <Pressable accessibilityRole="button" accessibilityLabel="Remove profile photo" disabled={busy} onPress={() => void remove()} style={s.secondary}><Text style={s.remove}>Remove photo</Text></Pressable>}
         <Pressable accessibilityRole="button" accessibilityLabel="Cancel profile photo" disabled={busy} onPress={() => setOpen(false)} style={s.secondary}><Text style={s.cancel}>Cancel</Text></Pressable>
       </View></View>

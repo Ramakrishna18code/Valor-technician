@@ -1,7 +1,9 @@
 import BrandLogo from "../components/BrandLogo";
-import { typographyStyles as appTypography } from "../theme/typography";
+import WelcomeServiceScene from "../components/WelcomeServiceScene";
+import { ServiceReveal } from "../components/ServiceExperience";
+import { typographyStyles as t } from "../theme/typography";
 import React from "react";
-import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -9,78 +11,68 @@ export default function WelcomeScreen({ onGetStarted, onSignIn }: {
   onGetStarted: () => void;
   onSignIn: () => void;
 }) {
-  const { width } = useWindowDimensions();
-  const scale = Math.min(width, 508) / 508;
-  const s = makeStyles(scale);
-
-  return (
-    <View style={s.screen}>
-      <View style={s.frame}>
-        <View style={StyleSheet.absoluteFill} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          <LinearGradient colors={["#EAF2FF", "#F8FBFF", "#FFF5E6"]} style={StyleSheet.absoluteFill} />
-          <View style={s.topCircle} />
-          <View style={s.bottomCircle} />
-        </View>
-        <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-          <View style={s.hero}>
-            <View style={{ marginBottom: 20 }}><BrandLogo width={170} showCompanyName /></View>
-            <View style={s.portrait}>
-              <Image source={require("../../assets/valor-field-technician.png")} style={s.illustration} resizeMode="contain" accessibilityLabel="Valor service technician in a navy and gold uniform holding a wrench and diagnostic tablet" />
+  const { width, fontScale } = useWindowDimensions();
+  const wide = width >= 900 && fontScale < 1.5;
+  const graphicWidth = Math.min(300, width - 72);
+  return <LinearGradient colors={["#EAF0F8", "#F6F8FC", "#EAF3F0"]} style={s.screen}>
+    <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+      <View style={[s.layout, wide && s.wide]}>
+        <View style={[s.intro, wide && s.introWide]}>
+          <BrandLogo width={150} showCompanyName />
+          <ServiceReveal><View style={s.artPanel}>
+            <View style={s.eyebrow}><View style={s.eyebrowDot} /><Text style={s.eyebrowText}>VALOR TECHNICIAN</Text></View>
+            <WelcomeServiceScene width={graphicWidth} />
+            <View style={s.features}>
+              <View style={s.feature}><Ionicons name="construct-outline" size={16} color="#5F7BA7" /><Text style={s.featureText}>Service</Text></View>
+              <View style={s.feature}><Ionicons name="calendar-outline" size={16} color="#8A75A5" /><Text style={s.featureText}>Schedule</Text></View>
+              <View style={s.feature}><Ionicons name="shield-checkmark-outline" size={16} color="#4F8A7B" /><Text style={s.featureText}>Safety</Text></View>
             </View>
+          </View></ServiceReveal>
+        </View>
+        <View style={[s.actions, wide && s.actionsWide]}>
+          <ServiceReveal delay={80}>
             <Text style={s.title}>Welcome, Technician</Text>
-            <Text style={s.subtitle}>Your jobs, service visits, and daily work.{"\n"}All in one place.</Text>
+            <Text style={s.tagline}>Keep every lift moving.</Text>
+            <Text style={s.description}>Your jobs, site visits and service updates, together in one place.</Text>
+          </ServiceReveal>
+          <View style={s.buttons}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Get Started" onPress={onGetStarted} style={({ pressed }) => [s.primary, pressed && s.pressed]}>
+              <LinearGradient colors={["#5474A3", "#4F838B"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.fill}>
+                <Text style={s.primaryText}>Get Started</Text><Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+              </LinearGradient>
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Sign In" onPress={onSignIn} style={({ pressed }) => [s.signIn, pressed && s.pressed]}>
+              <Ionicons name="log-in-outline" size={20} color="#506F96" /><Text style={s.signInText}>Sign In</Text>
+            </Pressable>
           </View>
-          <Pressable accessibilityRole="button" onPress={onGetStarted} style={({ pressed }) => [s.primary, pressed && s.pressed]}>
-            <LinearGradient colors={["#082A55", "#246DE3"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.fill}>
-              <Text style={s.primaryText}>Get Started</Text>
-              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-            </LinearGradient>
-          </Pressable>
-          <View style={s.divider}><View style={s.line} /><Text style={s.or}>Or</Text><View style={s.line} /></View>
-          <Pressable disabled accessibilityRole="button" accessibilityLabel="Continue with Google, coming soon" accessibilityState={{ disabled: true }} style={s.social}>
-            <View style={s.googleFrame}><Image source={require("../../assets/google-logo.png")} style={s.google} /></View>
-            <Text style={s.socialText}>Continue with Google</Text>
-          </Pressable>
-          <Pressable disabled accessibilityRole="button" accessibilityLabel="Continue with Apple, coming soon" accessibilityState={{ disabled: true }} style={s.social}>
-            <Ionicons name="logo-apple" size={32 * scale} color="#102033" />
-            <Text style={s.socialText}>Continue with Apple</Text>
-          </Pressable>
+          <View style={s.divider}><View style={s.line} /><Text style={s.or}>More ways to connect</Text><View style={s.line} /></View>
+          <View style={s.socialRow}>
+            <Pressable disabled accessibilityRole="button" accessibilityLabel="Continue with Google, coming soon" accessibilityState={{ disabled: true }} style={s.social}>
+              <View style={s.googleFrame}><Image source={require("../../assets/google-logo.png")} style={s.google} /></View><Text style={s.socialText}>Google</Text>
+            </Pressable>
+            <Pressable disabled accessibilityRole="button" accessibilityLabel="Continue with Apple, coming soon" accessibilityState={{ disabled: true }} style={s.social}>
+              <Ionicons name="logo-apple" size={23} color="#617086" /><Text style={s.socialText}>Apple</Text>
+            </Pressable>
+          </View>
           <Text style={s.availability}>Google and Apple sign-in coming soon</Text>
-          <View style={s.footer}>
-            <Text style={s.footerText}>Already have an account?</Text>
-            <Pressable accessibilityRole="button" onPress={onSignIn} hitSlop={12}><Text style={s.link}>Sign In</Text></Pressable>
-          </View>
-        </ScrollView>
+        </View>
       </View>
-    </View>
-  );
+      <View style={s.footer}><Ionicons name="business-outline" size={14} color="#64828F" /><Text style={s.footerText}>Built for your work in the field.</Text></View>
+    </ScrollView>
+  </LinearGradient>;
 }
-
-const serif = Platform.select({ ios: "Georgia", android: "serif", default: "'Times New Roman', serif" });
-const makeStyles = (r: number) => StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#EDF3FB" },
-  frame: { flex: 1, width: "100%", alignSelf: "center", overflow: "hidden" },
-  topCircle: { position: "absolute", width: 416 * r, height: 416 * r, borderRadius: 208 * r, top: -208 * r, right: -214 * r, backgroundColor: "#DCE9FF", opacity: 0.65 },
-  bottomCircle: { position: "absolute", width: 360 * r, height: 360 * r, borderRadius: 180 * r, bottom: -160 * r, left: -202 * r, backgroundColor: "#FBE7BF", opacity: 0.45 },
-  content: { flexGrow: 1, paddingHorizontal: 32 * r, paddingTop: Math.max(32, 16 * r), paddingBottom: 20 * r },
-  hero: { alignItems: "center", marginBottom: 28 * r },
-  portrait: { width: 208 * r, height: 208 * r, borderRadius: 104 * r, backgroundColor: "#EAF2FF", overflow: "hidden", marginBottom: 34 * r },
-  illustration: { width: 208 * r, height: 208 * r },
-  title: { ...appTypography.screenTitle, color: "#102033", textAlign: "center" },
-  subtitle: { ...appTypography.body, color: "#667A98", textAlign: "center", marginTop: 14 * r },
-  primary: { borderRadius: 25, overflow: "hidden", width: "100%", maxWidth: 320, alignSelf: "center" },
-  fill: { minHeight: 50, flexDirection: "row", gap: 14 * r, justifyContent: "center", alignItems: "center" },
-  primaryText: { ...appTypography.button, color: "#FFFFFF" },
-  pressed: { opacity: 0.88, transform: [{ scale: 0.99 }] },
-  divider: { flexDirection: "row", alignItems: "center", gap: 20 * r, height: 54 },
-  line: { flex: 1, height: 1, backgroundColor: "#E8EEF5" },
-  or: { ...appTypography.body, color: "#667A98" },
-  social: { minHeight: 48, borderRadius: 38 * r, borderWidth: 1, borderColor: "#D7E1EE", backgroundColor: "#F0F5FB", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 14 * r, marginBottom: 16 * r },
-  socialText: { ...appTypography.button, color: "#102033" },
-  googleFrame: { width: 36 * r, height: 36 * r, overflow: "hidden" },
-  google: { position: "absolute", width: 166 * r, height: 93.5 * r, left: -65.9 * r, top: -29.1 * r },
-  availability: { ...appTypography.secondary, color: "#667A98", textAlign: "center" },
-  footer: { flexGrow: 1, flexDirection: "row", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "center", gap: 6 * r, paddingTop: 24 },
-  footerText: { ...appTypography.secondary, color: "#667A98" },
-  link: { ...appTypography.button, color: "#246DE3" },
+const s = StyleSheet.create({
+  screen: { flex: 1 }, scroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 20, paddingTop: 24, paddingBottom: 24, gap: 22 },
+  layout: { width: "100%", maxWidth: 440, gap: 22 }, wide: { maxWidth: 1000, flexDirection: "row", alignItems: "center", gap: 56 },
+  intro: { alignItems: "center", gap: 20 }, introWide: { flex: 1 },
+  artPanel: { alignItems: "center", padding: 12, borderWidth: 1, borderColor: "#D5E1ED", borderRadius: 28, backgroundColor: "#F4F8FCB8", gap: 6 },
+  eyebrow: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 2 }, eyebrowDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#729F94" }, eyebrowText: { ...t.caption, letterSpacing: 1.5, color: "#5D7995" },
+  features: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12, paddingVertical: 5 }, feature: { flexDirection: "row", alignItems: "center", gap: 4 }, featureText: { ...t.caption, color: "#5C7089" },
+  actions: { gap: 12 }, actionsWide: { flex: 1, maxWidth: 390 }, title: { ...t.screenTitle, color: "#29476A", textAlign: "center" }, tagline: { ...t.cardTitle, color: "#5C8290", textAlign: "center", marginTop: 6 }, description: { ...t.body, color: "#60738A", textAlign: "center", marginTop: 8 },
+  buttons: { gap: 10, marginTop: 5 }, primary: { borderRadius: 16, overflow: "hidden" }, fill: { minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, padding: 12 }, primaryText: { ...t.button, color: "#FFFFFF" },
+  signIn: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: "#BBCDDC", backgroundColor: "#FFFFFFB8", borderRadius: 16, padding: 10 }, signInText: { ...t.button, color: "#506F96" }, pressed: { opacity: 0.82 },
+  divider: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 }, line: { flex: 1, height: 1, backgroundColor: "#D5E0E9" }, or: { ...t.caption, color: "#687C90" },
+  socialRow: { flexDirection: "row", gap: 10 }, social: { flex: 1, flexDirection: "row", flexWrap: "wrap", minHeight: 44, alignItems: "center", justifyContent: "center", gap: 8, padding: 8, borderWidth: 1, borderColor: "#D8E2EB", backgroundColor: "#F5F8FB", borderRadius: 14 }, socialText: { ...t.secondary, color: "#65758A" },
+  googleFrame: { width: 22, height: 22, overflow: "hidden" }, google: { position: "absolute", width: 101.4, height: 57.1, left: -40.3, top: -17.8 },
+  availability: { ...t.caption, color: "#687C90", textAlign: "center" }, footer: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6 }, footerText: { ...t.caption, color: "#64828F" },
 });

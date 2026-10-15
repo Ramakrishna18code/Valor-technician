@@ -13,6 +13,8 @@ import ProfileScreen from "./screens/ProfileScreen";
 import HistoryScreen from "./screens/HistoryScreen";
 import VisitsScreen from "./screens/VisitsScreen";
 import InspectionsScreen from "./screens/InspectionsScreen";
+import InstallationAssignmentsScreen from "./screens/InstallationAssignmentsScreen";
+import WorkScreen from "./screens/WorkScreen";
 import Dashboard from "./screens/DashboardScreen";
 import WelcomeScreen from "./screens/WelcomeScreen";
 import { ServiceHero, ServiceReveal, ServiceSection } from "./components/ServiceExperience";
@@ -42,7 +44,10 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+} from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { environment } from "./config/environment";
@@ -331,7 +336,7 @@ const visitContext = (visit: VisitView) =>
 const err = (error: unknown) =>
   error instanceof Error ? error.message : "Valor request failed.";
 
-export default function App() {
+function AppContent() {
   const [session, setSession] = useState<SessionState>("booting");
   const [authStage, setAuthStage] = useState<AuthStage>("welcome");
   const [application, setApplication] = useState<TechnicianApplication | null>(
@@ -671,6 +676,8 @@ export default function App() {
           />
         )}
         {screen === "inspections" && <InspectionsScreen />}
+        {screen === "installations" && <InstallationAssignmentsScreen />}
+        {screen === "work" && <WorkScreen />}
         {screen === "history" && (
           <HistoryScreen
             items={history?.items ?? []}
@@ -4347,6 +4354,14 @@ function Input(
         placeholderTextColor={colors.muted}
       />
     </View>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
   );
 }
 

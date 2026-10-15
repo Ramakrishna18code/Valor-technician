@@ -65,6 +65,12 @@ export interface ChangeRequestInput {
   requestedEndTime: string;
 }
 
+export interface InstallationAssignment {
+  id: number; installationRequestId: number; technicianProfileId: number; employeeId?: string | null;
+  status: "ASSIGNED" | "ACCEPTED" | "DECLINED" | "CANCELLED"; assignedAt: string;
+  respondedAt?: string | null; cancelledAt?: string | null; notes?: string | null; version: number;
+}
+
 async function attachmentForm(file: UploadFile) {
   const data = new FormData();
   if (Platform.OS === "web") {
@@ -78,11 +84,15 @@ async function attachmentForm(file: UploadFile) {
 }
 
 export const technicianApi = {
+  installationAssignments() { return requestData<InstallationAssignment[]>({ method: "GET", url: "/api/v1/technician/me/installations/assignments" }); },
+  acceptInstallationAssignment(id: number, version: number) { return requestData<InstallationAssignment>({ method: "POST", url: `/api/v1/technician/me/installations/assignments/${id}/accept`, params: { version } }); },
+  declineInstallationAssignment(id: number, version: number) { return requestData<InstallationAssignment>({ method: "POST", url: `/api/v1/technician/me/installations/assignments/${id}/decline`, params: { version } }); },
   inspections(query: { status?: string; page?: number; size?: number } = {}) {
     return requestData<PageView<InspectionSummary>>({ method: "GET", url: "/api/v1/technician/me/inspections", params: { page: 0, size: 20, ...query } }).then(pageItems);
   },
   inspection(id: number) { return requestData<InspectionDetail>({ method: "GET", url: `/api/v1/technician/me/inspections/${id}` }); },
   startInspection(id: number, version: number) { return requestData<InspectionDetail>({ method: "POST", url: `/api/v1/technician/me/inspections/${id}/start`, data: { version } }); },
+  acceptInspection(id: number, version: number) { return requestData<InspectionDetail>({ method: "POST", url: `/api/v1/technician/me/inspections/${id}/accept`, params: { version } }); },
   submitInspection(id: number, data: Record<string, unknown>) { return requestData<InspectionDetail>({ method: "PUT", url: `/api/v1/technician/me/inspections/${id}/assessment`, data }); },
   addInspectionEvidence(id: number, data: { documentType: string; originalFilename: string; contentType: string; storageKey: string; version: number }) { return requestData<InspectionDetail>({ method: "POST", url: `/api/v1/technician/me/inspections/${id}/evidence`, data }); },
   searchPlaces: (q: string) => requestData<Place[]>({ method: "GET", url: `/api/v1/locations/search?q=${encodeURIComponent(q)}` }),

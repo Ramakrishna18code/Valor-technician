@@ -19,7 +19,7 @@ export type AssignmentStatus = 'ASSIGNED' | 'ACCEPTED' | 'REJECTED' | 'RELEASED'
 export type VisitStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type AvailabilityStatus = 'AVAILABLE' | 'BUSY' | 'OFF_DUTY' | 'ON_LEAVE';
 export type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED' | 'READ';
-export type InspectionStatus = 'REQUESTED' | 'SCHEDULED' | 'ASSIGNED' | 'IN_PROGRESS' | 'SUBMITTED' | 'REVIEW_REQUIRED' | 'APPROVED' | 'REWORK_REQUIRED' | 'CANCELLED' | 'RESCHEDULE_REQUIRED';
+export type InspectionStatus = 'REQUESTED' | 'SCHEDULED' | 'ASSIGNED' | 'ACCEPTED' | 'IN_PROGRESS' | 'SUBMITTED' | 'REVIEW_REQUIRED' | 'APPROVED' | 'REWORK_REQUIRED' | 'CANCELLED' | 'RESCHEDULE_REQUIRED';
 export interface InspectionSummary {
   id: number; installationRequestId: number; status: InspectionStatus; scheduledAt?: string | null; scheduledTimezone?: string | null;
   assignedTechnicianId?: number | null; visitStartedAt?: string | null; submittedAt?: string | null; version: number;

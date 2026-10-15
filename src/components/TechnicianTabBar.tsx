@@ -7,7 +7,9 @@ import { TECHNICIAN_PRIMARY_NAV, type Screen } from "../screens/screenRegistry";
 const tabs = {
   dashboard: { label: "Home", icon: "home-outline", color: "#5275A8", tint: "#EDF3FC" },
   jobs: { label: "Jobs", icon: "construct-outline", color: "#92734C", tint: "#FAF5EC" },
+  work: { label: "Work", icon: "briefcase-outline", color: "#6B66A8", tint: "#F1F0FB" },
   inspections: { label: "Inspections", icon: "clipboard-outline", color: "#6B66A8", tint: "#F1F0FB" },
+  installations: { label: "Installations", icon: "business-outline", color: "#7A5D8C", tint: "#F8F0FB" },
   visits: { label: "Visits", icon: "calendar-outline", color: "#527F72", tint: "#EFF7F3" },
   notifications: { label: "Alerts", icon: "notifications-outline", color: "#A06480", tint: "#FBF1F5" },
   profile: { label: "Profile", icon: "person-outline", color: "#557F8C", tint: "#EFF6F8" },

@@ -79,8 +79,6 @@ export const TECHNICIAN_PRIMARY_NAV = [
   "jobs",
   "work",
   "visits",
-  "notifications",
-  "profile",
 ] as const satisfies readonly Screen[];
 
 export const TECHNICIAN_SCREEN_LABELS: Record<Screen, string> = {

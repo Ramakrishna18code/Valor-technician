@@ -11,8 +11,6 @@ const tabs = {
   inspections: { label: "Inspections", icon: "clipboard-outline", color: "#6B66A8", tint: "#F1F0FB" },
   installations: { label: "Installations", icon: "business-outline", color: "#7A5D8C", tint: "#F8F0FB" },
   visits: { label: "Visits", icon: "calendar-outline", color: "#527F72", tint: "#EFF7F3" },
-  notifications: { label: "Alerts", icon: "notifications-outline", color: "#A06480", tint: "#FBF1F5" },
-  profile: { label: "Profile", icon: "person-outline", color: "#557F8C", tint: "#EFF6F8" },
 } as const;
 
 function TabItem({ tab, selected, reduceMotion, unreadCount, onChange }: {
@@ -38,8 +36,6 @@ function TabItem({ tab, selected, reduceMotion, unreadCount, onChange }: {
       borderColor: selected ? item.color + "55" : "transparent",
       transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) }] }]}>
       <Ionicons name={item.icon} size={22} color={item.color} />
-      {tab === "notifications" && unreadCount > 0 ? <Text accessibilityLabel={`${unreadCount} unread alerts`}
-        style={styles.badge}>{unreadCount > 9 ? "9+" : unreadCount}</Text> : null}
     </Animated.View>
     <Text style={[styles.label, selected && { color: item.color, fontWeight: "600" }]}>{item.label}</Text>
     <View style={[styles.indicator, { backgroundColor: selected ? item.color : "transparent" }]} />

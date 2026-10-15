@@ -22,6 +22,7 @@ type Props = {
   onVisits: () => void;
   onNotifications: () => void;
   onProfile: () => void;
+  onLocations?: () => void;
   onEmergency: () => void;
   onSupport: () => void;
   onHistory: () => void;
@@ -66,8 +67,9 @@ export default function DashboardScreen(props: Props) {
     <ScrollView style={s.scroll} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={loading && !!dashboard} onRefresh={props.onRefresh} tintColor={c.blue} />}>
       <View style={s.top}>
-        <Text style={{ ...appTypography.screenTitle, color: c.navy }}>Home</Text>
+        <View style={s.brand}><Text style={s.brandName}>VALOR</Text>{profile?.assignedArea && <Text style={s.meta}>Service area: {profile.assignedArea}</Text>}</View>
         <View style={s.topActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open my locations" onPress={props.onLocations} style={s.locationChip}><Ionicons name="location-outline" size={18} color={c.teal} /><Text style={s.locationChipText}>Locations</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Refresh dashboard" disabled={loading} onPress={props.onRefresh} style={s.iconButton}><Ionicons name="refresh-outline" size={22} color={c.teal} /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={`Notifications, ${props.unreadCount} unread`} onPress={props.onNotifications} style={s.iconButton}>
             <Ionicons name="notifications-outline" size={23} color={c.amber} />
@@ -88,7 +90,6 @@ export default function DashboardScreen(props: Props) {
           <Text style={s.employee}>{profile?.employeeId || "Valor service team"}</Text>
         </View>
       </LinearGradient>
-      {profile?.assignedArea && <View style={s.area}><Ionicons name="location-outline" size={18} color={c.muted} /><Text style={s.meta}>Service area: {profile.assignedArea}</Text></View>}
       <View style={s.section}><Text style={s.heading}>Work overview</Text><Text style={s.caption}>Your assigned workload</Text></View>
       {loading && !dashboard ? <ActivityIndicator color={c.blue} accessibilityLabel="Loading dashboard" /> : <View style={s.grid}>
         {metrics.map(metric => <Pressable key={metric.label} accessibilityRole="button" accessibilityLabel={`${metric.label}: ${metric.value ?? "unavailable"}`} onPress={metric.action} style={[s.metric, { width: cardWidth }]}>
@@ -127,7 +128,7 @@ const s = StyleSheet.create({
   scroll: { flex: 1 }, content: { padding: 16, paddingBottom: 32, gap: 16 }, flex: { flex: 1, minWidth: 0 },
   top: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
   brand: { flexDirection: "row", alignItems: "center", gap: 8 }, brandMark: { color: "#F6A800", fontSize: 32, fontWeight: "700" }, brandName: { color: c.navy, fontSize: 21, fontWeight: "700", letterSpacing: 2 }, brandMeta: { ...appTypography.secondary, color: c.muted, letterSpacing: 1.5 },
-  topActions: { flexDirection: "row", gap: 4 }, iconButton: { minWidth: 44, minHeight: 48, alignItems: "center", justifyContent: "center" }, profileIcon: { backgroundColor: "#EAF2FF", borderRadius: 24 },
+  topActions: { flexDirection: "row", gap: 4, alignItems: "center" }, locationChip: { minHeight: 38, borderRadius: 19, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#E7F5F3" }, locationChipText: { color: c.teal, fontWeight: "700", fontSize: 12 }, iconButton: { minWidth: 44, minHeight: 48, alignItems: "center", justifyContent: "center" }, profileIcon: { backgroundColor: "#EAF2FF", borderRadius: 24 },
   notificationBadge: { ...appTypography.secondary, position: "absolute", top: 2, right: 0, borderRadius: 10, minWidth: 18, padding: 2, backgroundColor: c.red, color: "white", textAlign: "center" },
   hero: { borderRadius: 24, padding: 20, gap: 10, borderWidth: 1, borderColor: "#7496B0" }, heroMain: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }, greeting: { ...appTypography.body, color: "#F1F6FC" }, heroTitle: { ...appTypography.screenTitle, fontWeight: "600", color: "white", flexShrink: 1 }, heroDescription: { ...appTypography.body, color: "#F1F6FC", maxWidth: 520 }, heroFooter: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 },
   availability: { backgroundColor: "#EAF7EF", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 6 }, availabilityText: { ...appTypography.secondary, color: c.navy }, employee: { ...appTypography.secondary, color: "#DCE8F7" }, area: { flexDirection: "row", gap: 6, alignItems: "center" },

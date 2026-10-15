@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Text, View, StyleSheet } from "react-native";
 import type { SiteMapProps } from "./SiteMap.types";
-import "leaflet/dist/leaflet.css";
+import { leafletCss } from "./leafletRuntime";
 import "./map.css";
 export default function SiteMap({
   destination,
@@ -20,6 +20,9 @@ export default function SiteMap({
   const identity = JSON.stringify([destination, current, route]);
   useEffect(() => {
     if (!host.current) return;
+    const style = document.createElement("style");
+    style.textContent = leafletCss;
+    document.head.appendChild(style);
     const L = require("leaflet");
     const instance = L.map(host.current, {
       zoomControl: false,
@@ -46,6 +49,7 @@ export default function SiteMap({
       observer.disconnect();
       instance.remove();
       map.current = null;
+      style.remove();
     };
   }, []);
   useEffect(() => {

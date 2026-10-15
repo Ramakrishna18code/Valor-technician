@@ -19,6 +19,7 @@ import type {
   RequestView,
   TechnicianDashboard,
   TechnicianProfileView,
+  TechnicianSavedLocation,
   UploadFile,
   PrivateAttachmentView,
   VisitChangeRequestView,
@@ -192,6 +193,11 @@ export const technicianApi = {
       data: input,
     });
   },
+  locations() { return requestData<TechnicianSavedLocation[]>({ method: "GET", url: "/api/v1/technician/me/locations" }); },
+  createLocation(input: Omit<TechnicianSavedLocation, "id">) { return requestData<TechnicianSavedLocation>({ method: "POST", url: "/api/v1/technician/me/locations", data: input }); },
+  updateLocation(id: number, input: Omit<TechnicianSavedLocation, "id">) { return requestData<TechnicianSavedLocation>({ method: "PUT", url: `/api/v1/technician/me/locations/${id}`, data: input }); },
+  deleteLocation(id: number) { return requestData<void>({ method: "DELETE", url: `/api/v1/technician/me/locations/${id}` }); },
+  lookupPincode(pincode: string) { return requestData<{ locations: Array<{ state: string; district: string }> }>({ method: "GET", url: `/api/v1/locations/pincodes/${pincode}` }); },
 
   jobs(query: JobsQuery = {}) {
     return requestData<PageView<RequestView>>({

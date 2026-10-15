@@ -93,6 +93,10 @@ export interface TechnicianProfileView {
   latitude?: number | null;
   longitude?: number | null;
 }
+export interface TechnicianSavedLocation {
+  id: number; title: string; pincode: string; state?: string | null; district?: string | null; address?: string | null;
+  latitude: number; longitude: number; defaultLocation: boolean;
+}
 
 export interface TechnicianDashboard {
   profile: TechnicianProfileView;

@@ -10,6 +10,7 @@ import BottomNav from "./components/TechnicianTabBar";
 import WorkdayGraphic from "./components/WorkdayGraphic";
 import { AlertsHeader, AlertsEmpty } from "./components/AlertsExperience";
 import ProfileScreen from "./screens/ProfileScreen";
+import MyLocationsScreen from "./screens/MyLocationsScreen";
 import HistoryScreen from "./screens/HistoryScreen";
 import VisitsScreen from "./screens/VisitsScreen";
 import InspectionsScreen from "./screens/InspectionsScreen";
@@ -74,6 +75,7 @@ import type {
   RequestView,
   TechnicianDashboard,
   TechnicianProfileView,
+  TechnicianSavedLocation,
   PrivateAttachmentView,
   VisitView,
   UploadFile,
@@ -107,6 +109,7 @@ async function allTechnicianJobs() {
   const first = await technicianApi.jobs({ page: 0, size: 100 });
   const remaining = await Promise.all(Array.from({ length: Math.max(0, first.totalPages - 1) }, (_, index) => technicianApi.jobs({ page: index + 1, size: 100 })));
   const items = Array.from(new Map([first, ...remaining].flatMap(page => page.items).map(item => [item.id, item])).values());
+  items.sort((a, b) => String(b.updatedAt || b.createdAt || b.preferredVisitDate || "").localeCompare(String(a.updatedAt || a.createdAt || a.preferredVisitDate || "")));
   return { ...first, items, page: 0, size: items.length, totalPages: 1 };
 }
 
@@ -368,6 +371,7 @@ function AppContent() {
   const [servicePayment, setServicePayment] =
     useState<TechnicianServicePayment | null>(null);
   const [jobLocation, setJobLocation] = useState<LocationView | null>(null);
+  const [travelPoint, setTravelPoint] = useState<{ latitude: number; longitude: number } | null>(null);
   const [privateAttachments, setPrivateAttachments] = useState<
     PrivateAttachmentView[]
   >([]);
@@ -520,7 +524,8 @@ function AppContent() {
       size: 50,
     });
     const uniqueItems = Array.from(new Map(response.items.map(item => [item.id, item])).values());
-    const items = filter.emergency ? uniqueItems.filter(item => item.priority === "EMERGENCY") : uniqueItems;
+    const items = (filter.emergency ? uniqueItems.filter(item => item.priority === "EMERGENCY") : uniqueItems)
+      .sort((a, b) => String(b.updatedAt || b.createdAt || b.completedAt || "").localeCompare(String(a.updatedAt || a.createdAt || a.completedAt || "")));
     setHistory({ ...response, items });
   };
 
@@ -648,6 +653,7 @@ function AppContent() {
             onJob={openJob}
             onNotifications={() => setScreen("notifications")}
             onProfile={() => setScreen("profile")}
+            onLocations={() => setScreen("profileLocation")}
             onEmergency={() => setScreen("emergencyRequests")}
             onSupport={() => setScreen("support")}
             
@@ -801,7 +807,7 @@ function AppContent() {
             }}
           />
         )}
-        {screen === "jobDetail" && selectedJob ? <JobStageActions detail={selectedJob} checklist={checklist} completionOtp={completionOtp} arrivalOtp={arrivalOtp} onTransition={(status) => { setPendingStatus(status); setModal("transition"); }} onReport={() => setModal("report")} onBackHome={() => setScreen("dashboard")} onArrivalRequest={async () => { setArrivalOtp(await technicianApi.requestArrivalOtp(selectedJob.request.id)); }} onArrivalVerify={async (id, code) => { setArrivalOtp(await technicianApi.verifyArrivalOtp(selectedJob.request.id, id, code)); await refreshJob(); }} onCompletionRequest={async () => { setCompletionOtp(await technicianApi.requestCompletionOtp(selectedJob.request.id)); }} onCompletionVerify={async (id, code) => { setCompletionOtp(await technicianApi.verifyCompletionOtp(selectedJob.request.id, id, code)); await refreshJob(); }} /> : null}
+        {screen === "jobDetail" && selectedJob ? <JobStageActions detail={selectedJob} checklist={checklist} completionOtp={completionOtp} arrivalOtp={arrivalOtp} onTransition={(status, point) => { setTravelPoint(point ?? null); setPendingStatus(status); setModal("transition"); }} onReport={() => setModal("report")} onBackHome={() => setScreen("dashboard")} onArrivalRequest={async () => { setArrivalOtp(await technicianApi.requestArrivalOtp(selectedJob.request.id)); }} onArrivalVerify={async (id, code) => { setArrivalOtp(await technicianApi.verifyArrivalOtp(selectedJob.request.id, id, code)); await refreshJob(); }} onCompletionRequest={async () => { setCompletionOtp(await technicianApi.requestCompletionOtp(selectedJob.request.id)); }} onCompletionVerify={async (id, code) => { setCompletionOtp(await technicianApi.verifyCompletionOtp(selectedJob.request.id, id, code)); await refreshJob(); }} /> : null}
         {screen === "visits" && (
           <VisitsScreen onVisit={openVisit} />
         )}
@@ -864,7 +870,7 @@ function AppContent() {
           />
         )}
         {screen === "profileHelp" && <HelpPage />}
-        {screen === "profileLocation" && <LocationPage />}
+        {screen === "profileLocation" && <MyLocationsScreen onBack={() => setScreen("profile")} />}
         {screen === "profileLanguage" && <LanguagePage />}
         {screen === "profileTheme" && <ThemePage />}
         {screen === "profileNotifications" && (
@@ -918,7 +924,10 @@ function AppContent() {
               } else {
                 let startLatitude: number | undefined;
                 let startLongitude: number | undefined;
-                if (pendingStatus === "ON_THE_WAY") {
+                if (pendingStatus === "ON_THE_WAY" && travelPoint) {
+                  startLatitude = travelPoint.latitude;
+                  startLongitude = travelPoint.longitude;
+                } else if (pendingStatus === "ON_THE_WAY") {
                   try {
                     const permission = await Location.requestForegroundPermissionsAsync();
                     if (permission.granted) {
@@ -2042,8 +2051,6 @@ function LoginScreen({
     <AuthFrame onBack={onBack} compactBrand>
       <View style={styles.signInHero}>
         <View style={socialSignInStyles.eyebrowRow}><View style={socialSignInStyles.eyebrowLine} /><Text style={socialSignInStyles.eyebrow}>YOUR TECHNICIAN ACCOUNT</Text></View>
-        <Text style={styles.authTitle}>Welcome back</Text>
-        <Text style={styles.authSubtitle}>View assigned jobs, plan service visits, and keep your work up to date.</Text>
       </View>
       <AuthInput label="Email address" placeholder="Enter your email address" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" />
       <AuthInput label="Password" placeholder="Enter your password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" />
@@ -2221,10 +2228,13 @@ function Jobs({ items, filter, loading, onFilter, onJob, onStartJob, onRefresh }
     ListEmptyComponent={loading ? <ActivityIndicator color={colors.info} /> : <Empty text={hasFilters ? "No jobs match these filters. Clear filters to see all assignments." : "No jobs assigned yet. Refresh to check for new assignments."} />}
   />;
 }
-function JobStageActions({ detail, checklist, completionOtp, arrivalOtp, onTransition, onReport, onBackHome, onArrivalRequest, onArrivalVerify, onCompletionRequest, onCompletionVerify }: { detail: JobDetail; checklist: JobChecklistView | null; completionOtp: CompletionOtpState | null; arrivalOtp: ArrivalOtpState | null; onTransition: (status: RequestStatus) => void; onReport: () => void; onBackHome: () => void; onArrivalRequest: () => Promise<void>; onArrivalVerify: (id: number, code: string) => Promise<void>; onCompletionRequest: () => Promise<void>; onCompletionVerify: (id: number, code: string) => Promise<void> }) {
+function JobStageActions({ detail, checklist, completionOtp, arrivalOtp, onTransition, onReport, onBackHome, onArrivalRequest, onArrivalVerify, onCompletionRequest, onCompletionVerify }: { detail: JobDetail; checklist: JobChecklistView | null; completionOtp: CompletionOtpState | null; arrivalOtp: ArrivalOtpState | null; onTransition: (status: RequestStatus, point?: { latitude: number; longitude: number }) => void; onReport: () => void; onBackHome: () => void; onArrivalRequest: () => Promise<void>; onArrivalVerify: (id: number, code: string) => Promise<void>; onCompletionRequest: () => Promise<void>; onCompletionVerify: (id: number, code: string) => Promise<void> }) {
   const request = detail.request;
   const needsAcceptance = detail.activeAssignment?.status === "ASSIGNED";
   const [arrivalOpen, setArrivalOpen] = useState(false), [completionOpen, setCompletionOpen] = useState(false);
+  const [travelLocation, setTravelLocation] = useState<{ title: string; latitude: number; longitude: number } | null>(null);
+  const [travelLocations, setTravelLocations] = useState<any[]>([]);
+  useEffect(() => { if (request.status === "ACCEPTED" || request.status === "ASSIGNED") void technicianApi.locations().then(rows => { setTravelLocations(rows); setTravelLocation(rows.find((row: any) => row.defaultLocation) || rows[0] || null); }).catch(() => undefined); }, [request.status]);
   if (request.status === "CANCELLED") return null;
   const checklistDone = !checklist || checklist.status === "COMPLETED";
   const reportDone = Boolean(detail.report?.diagnosis?.trim() && detail.report?.workPerformed?.trim() && detail.report?.testingResult?.trim() && detail.report.assignmentId === detail.activeAssignment?.id);
@@ -2237,9 +2247,14 @@ function JobStageActions({ detail, checklist, completionOtp, arrivalOtp, onTrans
   if (request.status === "COMPLETED") return <StageActionBar primaryLabel="Back to Home" primaryIcon="home-outline" secondaryLabel="Review job" secondaryIcon="document-text-outline" onSecondary={() => undefined} onPrimary={onBackHome} />;
   const secondaryLabel = request.status === "REPAIR_IN_PROGRESS" ? "Waiting for parts" : request.status === "TESTING" ? "Report" : "Call";
   const secondaryIcon = request.status === "REPAIR_IN_PROGRESS" ? "cube-outline" : request.status === "TESTING" ? "document-text-outline" : "call-outline";
-  const primary = () => request.status === "REACHED_SITE" && !arrivalDone ? setArrivalOpen(true) : request.status === "TESTING" && !otpDone ? setCompletionOpen(true) : onTransition(status);
+  const primary = () => request.status === "REACHED_SITE" && !arrivalDone ? setArrivalOpen(true) : request.status === "TESTING" && !otpDone ? setCompletionOpen(true) : onTransition(status, travelLocation ? { latitude: travelLocation.latitude, longitude: travelLocation.longitude } : undefined);
   const secondary = () => request.status === "REPAIR_IN_PROGRESS" ? onTransition("WAITING_FOR_PARTS") : request.status === "TESTING" ? onReport() : callPhone(info.phone);
-  return <><StageActionBar primaryLabel={label} primaryIcon="arrow-forward" primaryDisabled={disabled} secondaryLabel={secondaryLabel} secondaryIcon={secondaryIcon} onSecondary={secondary} onPrimary={primary} />{arrivalOpen ? <ArrivalVerification visible state={arrivalOtp} onClose={() => setArrivalOpen(false)} onRequest={onArrivalRequest} onVerify={async (id, code) => { await onArrivalVerify(id, code); setArrivalOpen(false); }} /> : null}{completionOpen ? <CompletionOtpPanel visible state={completionOtp} onClose={() => setCompletionOpen(false)} onRequest={onCompletionRequest} onVerify={async (id, code) => { await onCompletionVerify(id, code); }} onContinue={() => setCompletionOpen(false)} /> : null}</>;
+  return <>{(request.status === "ACCEPTED" || request.status === "ASSIGNED") ? <TravelLocationPicker value={travelLocation} items={travelLocations} onChange={setTravelLocation} /> : null}<StageActionBar primaryLabel={label} primaryIcon="arrow-forward" primaryDisabled={disabled} secondaryLabel={secondaryLabel} secondaryIcon={secondaryIcon} onSecondary={secondary} onPrimary={primary} />{arrivalOpen ? <ArrivalVerification visible state={arrivalOtp} onClose={() => setArrivalOpen(false)} onRequest={onArrivalRequest} onVerify={async (id, code) => { await onArrivalVerify(id, code); setArrivalOpen(false); }} /> : null}{completionOpen ? <CompletionOtpPanel visible state={completionOtp} onClose={() => setCompletionOpen(false)} onRequest={onCompletionRequest} onVerify={async (id, code) => { await onCompletionVerify(id, code); }} onContinue={() => setCompletionOpen(false)} /> : null}</>;
+}
+
+function TravelLocationPicker({ value, items, onChange }: { value: any; items: any[]; onChange: (value: any) => void }) {
+  const [open, setOpen] = useState(false);
+  return <View style={{ paddingHorizontal: 14, paddingTop: 8, backgroundColor: "#FFF" }}><Pressable accessibilityRole="button" onPress={() => setOpen(true)} style={{ minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: "#CFE0FA", paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}><Text style={{ color: "#16385F", fontWeight: "700" }}>Starting from: {value?.title || "Current location"}</Text><AppIcon name="chevron-down" size={18} color={colors.info} /></Pressable><Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}><Pressable style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(8,24,51,.35)" }} onPress={() => setOpen(false)}><View style={{ backgroundColor: "#FFF", padding: 18, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>{items.map(item => <Pressable key={item.id} onPress={() => { onChange(item); setOpen(false); }} style={{ paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: "#EDF1F6" }}><Text style={{ fontSize: 16, color: "#16385F" }}>{item.title}{item.defaultLocation ? " · Default" : ""}</Text><Text style={{ color: "#66758A", marginTop: 3 }}>{item.address || `${item.district || ""}, ${item.state || ""}`}</Text></Pressable>)}<Pressable onPress={() => { onChange(null); setOpen(false); }} style={{ paddingVertical: 15 }}><Text style={{ fontSize: 16, color: "#2474E7", fontWeight: "700" }}>Use current device location</Text></Pressable></View></Pressable></Modal></View>;
 }
 
 function JobDetailScreen({
@@ -3249,6 +3264,11 @@ function HelpPage() {
   );
 }
 function LocationPage() {
+  const [items, setItems] = useState<TechnicianSavedLocation[]>([]);
+  const [error, setError] = useState("");
+  const [title, setTitle] = useState("Home"), [pincode, setPincode] = useState(""), [stateName, setStateName] = useState(""), [district, setDistrict] = useState(""), [address, setAddress] = useState(""), [point, setPoint] = useState<{latitude:number;longitude:number} | null>(null), [saving, setSaving] = useState(false);
+  useEffect(() => { void technicianApi.locations().then(setItems).catch(problem => setError(err(problem))); }, []);
+  const saveLocation = async () => { if (!title.trim() || !/^\d{6}$/.test(pincode) || !point) { setError("Enter a title, six-digit PIN and choose your current location."); return; } setSaving(true); try { const saved = await technicianApi.createLocation({ title: title.trim(), pincode, state: stateName, district, address, latitude: point.latitude, longitude: point.longitude, defaultLocation: items.length === 0 }); setItems(current => [saved, ...current]); setError(""); } catch (problem) { setError(err(problem)); } finally { setSaving(false); } };
   const [status, setStatus] = useState("Permission not requested");
   const request = async () => {
     try {
@@ -3260,10 +3280,13 @@ function LocationPage() {
   };
   return (
     <ScrollView contentContainerStyle={styles.profileContent}>
-      <Text style={styles.jobsTitle}>Location Services</Text>
+      <Text style={styles.jobsTitle}>My locations</Text>
       <Text style={styles.settingsSubtitle}>
-        Location is used when choosing your saved profile location or once when starting a job. Valor does not use background or continuous GPS tracking.
+        Your saved locations can be used when starting travel. Valor does not use background or continuous GPS tracking.
       </Text>
+      {items.map(item => <View key={item.id} style={styles.card}><Text style={styles.sectionHeading}>{item.title}{item.defaultLocation ? " · Default" : ""}</Text><Text style={styles.muted}>{item.address || "Address not added"}</Text><Text style={styles.muted}>{item.district}, {item.state} · {item.pincode}</Text></View>)}
+      {error ? <Text accessibilityRole="alert" style={styles.errorText}>{error}</Text> : null}
+      <View style={styles.card}><TextInput style={styles.searchInput} value={title} onChangeText={setTitle} placeholder="Title: Home, Office or Work" /><TextInput style={styles.searchInput} value={pincode} onChangeText={value => setPincode(value.replace(/\D/g, "").slice(0, 6))} placeholder="Pincode" keyboardType="number-pad" /><TextInput style={styles.searchInput} value={stateName} onChangeText={setStateName} placeholder="State" /><TextInput style={styles.searchInput} value={district} onChangeText={setDistrict} placeholder="District" /><TextInput style={styles.searchInput} value={address} onChangeText={setAddress} placeholder="Street address" /><Pressable style={styles.primaryButton} onPress={async () => { try { const permission = await Location.requestForegroundPermissionsAsync(); if (!permission.granted) throw new Error("Location permission denied."); const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); setPoint({ latitude: current.coords.latitude, longitude: current.coords.longitude }); setStatus("Location selected"); } catch (problem) { setError(problem instanceof Error ? problem.message : "Current location unavailable."); } }}><Text style={styles.primaryText}>Use current location</Text></Pressable><Text style={styles.muted}>{point ? `${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}` : "Choose a location before saving"}</Text><Pressable disabled={saving} style={styles.greenButton} onPress={() => void saveLocation()}><Text style={styles.primaryText}>{saving ? "Saving..." : "Save location"}</Text></Pressable></View>
       <Info title="Current access" rows={[status]} />
       <Pressable style={styles.primaryButton} onPress={request}>
         <Text style={styles.primaryText}>Allow Location Access</Text>

@@ -29,7 +29,8 @@ export function ServiceReveal({ children, delay = 0 }: { children: React.ReactNo
 }
 
 export function ServiceSection({ number, title, subtitle }: { number: string; title: string; subtitle: string }) {
-  return <View style={s.section}><Text style={s.sectionNumber}>{number}</Text><View style={s.flex}><Text style={s.sectionTitle}>{title}</Text><Text style={s.sectionSubtitle}>{subtitle}</Text></View><View style={s.sectionLine} /></View>;
+  const tone = number === "01" ? "#547F99" : number === "02" ? "#5D9181" : "#A38A5D";
+  return <View style={s.section}><View style={{ width: 38, height: 40, borderRadius: 12, backgroundColor: tone + "18", alignItems: "center", justifyContent: "center" }}><Ionicons name={number === "01" ? "person-outline" : number === "02" ? "business-outline" : "clipboard-outline"} size={21} color={tone} /></View><View style={s.flex}><Text style={s.sectionTitle}>{title}</Text><Text style={s.sectionSubtitle}>{subtitle}</Text></View><View style={s.sectionLine} /></View>;
 }
 
 export function ServiceHero({ status, jobId, building, service, arrivalVerified = false }: { status: string; jobId: string; building: string; service: string; arrivalVerified?: boolean }) {
@@ -126,7 +127,7 @@ const s = StyleSheet.create({
   stepLabelCurrent: {  color: "#203C49" },
   section: { flexDirection: "row", alignItems: "center", gap: 12, paddingTop: 4, paddingBottom: 0 },
   sectionNumber: { ...appTypography.body, color: "#246DE3", backgroundColor: "#EAF2FF", padding: 10, borderRadius: 12 },
-  sectionTitle: { ...appTypography.sectionHeading, color: "#082A55" },
-  sectionSubtitle: { ...appTypography.secondary, color: "#66758A" },
+  sectionTitle: { fontSize: 16, lineHeight: 23, fontWeight: "600", color: "#082A55" },
+  sectionSubtitle: { fontSize: 11, lineHeight: 18, color: "#66758A" },
   sectionLine: { width: 28, height: 2, backgroundColor: "#DDE5EF" },
 });

@@ -2415,12 +2415,12 @@ function JobDetailScreen({
         </ServiceReveal>
         {request.status === "TESTING" && checklist ? <ChecklistPanel checklist={checklist} onSave={onChecklistSave} /> : null}
 
-        {request.status === "TESTING" && <View style={styles.serviceInstructionCard}>
-          <Text style={styles.serviceCardHeading}>Before handover</Text>
-          <Text style={styles.serviceBodyText}>{checklistDone ? "✓ Checklist complete" : "1. Complete the required checklist"}</Text>
-          <Pressable accessibilityRole="button" onPress={onReport} style={styles.serviceSecondaryAction}><Text style={styles.outlineText}>{reportDone ? "Edit saved service report" : "2. Add service report & notes"}</Text></Pressable>
-          <Text style={styles.serviceBodyText}>{otpDone ? "✓ Customer completion verified" : "3. Verify the customer's completion OTP"}</Text>
-        </View>}
+        {request.status === "TESTING" && <ServiceReveal delay={460}><View style={{ backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#DDE7EC", borderRadius: 18, padding: 15, gap: 13 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><View style={{ width: 36, height: 38, borderRadius: 12, backgroundColor: "#E6F1ED", alignItems: "center", justifyContent: "center" }}><AppIcon name="shield-checkmark-outline" size={21} color="#5D9181" /></View><View style={{ flex: 1 }}><Text style={styles.serviceCardHeading}>Before handover</Text><Text style={styles.serviceBodyText}>Finish these three checks to hand over safely.</Text></View></View>
+          <HandoverCheck title="Service checklist" done={checklistDone} detail={checklistDone ? "Required checks completed" : "Complete and save the required checks"} />
+          <Pressable accessibilityRole="button" accessibilityLabel={reportDone ? "Edit saved service report" : "Add service report and notes"} onPress={onReport}><HandoverCheck title="Service report & notes" done={reportDone} detail={reportDone ? "Report saved. Tap to review or edit." : "Tap to add diagnosis, work and test results"} action /></Pressable>
+          <HandoverCheck title="Customer completion OTP" done={otpDone} detail={otpDone ? "Customer verification complete" : "Verify the code after testing is finished"} />
+        </View></ServiceReveal>}
         {request.status === "TESTING" && checklist && !checklistDone ? (
           <Text style={styles.muted}>Complete all required checklist items before completing this job.</Text>
         ) : null}
@@ -2703,6 +2703,11 @@ function RouteStat({ label: statLabel, value }: { label: string; value: string }
       <Text style={styles.routeStatLabel}>{statLabel}</Text>
     </View>
   );
+}
+
+function HandoverCheck({ title, detail, done, action = false }: { title: string; detail: string; done: boolean; action?: boolean }) {
+  const color = done ? "#5B907C" : "#A08758";
+  return <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderRadius: 12, backgroundColor: done ? "#EFF6F2" : "#F8F4EA" }}><AppIcon name={done ? "checkmark-circle" : "ellipse-outline"} size={21} color={color} /><View style={{ flex: 1 }}><Text style={{ fontSize: 13, lineHeight: 20, fontWeight: "600", color: "#294661" }}>{title}</Text><Text style={{ fontSize: 11, lineHeight: 18, color: "#6A7E8C", marginTop: 3 }}>{detail}</Text></View>{action ? <AppIcon name="chevron-forward" size={17} color={color} /> : null}</View>;
 }
 
 function CustomerContactCard({ info }: { info: ReturnType<typeof jobInfo> }) {
